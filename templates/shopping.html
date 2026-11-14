@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, flash %}
+
+{% block title %}Shopping List · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/live.js') }}" defer></script>
+<script src="{{ url_for('static', path='/js/shopping.js') }}" defer></script>
+{% endblock %}
+
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="week-head week-head--compact">
+    <h1 class="display display--sm">Shopping <em>list</em></h1>
+    {% with week_base = "/shopping" %}{% include "_week_nav.html" %}{% endwith %}
+</section>
+
+<form class="add-item" method="post" action="/shopping/{{ week_iso }}/items" data-add-item>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="visually-hidden" for="add-name">Add an item</label>
+    <input id="add-name" class="add-item__name" type="text" name="name" placeholder="Add an item..." maxlength="120" autocomplete="off" enterkeyhint="done" required>
+    <label class="visually-hidden" for="add-qty">Quantity (optional)</label>
+    <input id="add-qty" class="add-item__qty" type="text" name="quantity" placeholder="Qty" maxlength="40" autocomplete="off" enterkeyhint="done">
+    <button type="submit" class="btn btn-primary add-item__btn">{{ icon("plus", 18) }}<span>Add</span></button>
+</form>
+
+<p class="sync-status" data-sync-status role="status" aria-live="polite" hidden></p>
+
+<div data-live data-live-url="/shopping/{{ week_iso }}/live" data-version="{{ state.version }}">
+    {% include "_shopping_live.html" %}
+</div>
+
+<p class="shop-foot">
+    <a class="text-link" href="/staples?week={{ week_iso }}">{{ icon("jar", 18) }}Manage Kitchen Staples</a>
+</p>
+{% endblock %}

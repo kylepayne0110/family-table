@@ -1,0 +1,13 @@
+{% from "_macros.html" import icon %}
+<nav class="week-nav" aria-label="Choose a week">
+    <a class="week-nav__step" href="{{ week_base }}?week={{ prev_week }}" aria-label="Previous week">{{ icon("arrow-left", 18) }}</a>
+    <div class="week-nav__label">
+        <span class="week-nav__dates">{{ week_label }}</span>
+        {% if is_this_week %}
+            <span class="week-nav__now">This week</span>
+        {% else %}
+            <a class="week-nav__now week-nav__now--link" href="{{ week_base }}">Back to this week</a>
+        {% endif %}
+    </div>
+    <a class="week-nav__step" href="{{ week_base }}?week={{ next_week }}" aria-label="Next week">{{ icon("arrow-right", 18) }}</a>
+</nav>

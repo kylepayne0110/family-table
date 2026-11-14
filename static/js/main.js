@@ -143,6 +143,27 @@ function setupImportForm() {
   });
 }
 
+// Instant search on the recipe picker and staples list (the form still works without JS).
+function setupFilters() {
+  document.querySelectorAll("[data-filter-input]").forEach((input) => {
+    const name = input.dataset.filterInput;
+    const list = document.querySelector(`[data-filter-list="${name}"]`);
+    const empty = document.querySelector(`[data-filter-empty="${name}"]`);
+    if (!list) return;
+    const filter = () => {
+      const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      list.querySelectorAll("[data-filter-text]").forEach((item) => {
+        const match = words.every((w) => item.dataset.filterText.includes(w));
+        item.hidden = !match;
+        if (match) shown += 1;
+      });
+      if (empty) empty.hidden = shown > 0;
+    };
+    input.addEventListener("input", filter);
+  });
+}
+
 // Move focus to a form's error summary so screen readers announce it.
 function focusErrors() {
   const summary = document.querySelector("[data-focus-on-load]");
@@ -157,5 +178,6 @@ document.addEventListener("DOMContentLoaded", () => {
   setupConfirms();
   setupNoteToggle();
   setupImportForm();
+  setupFilters();
   focusErrors();
 });

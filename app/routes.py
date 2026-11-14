@@ -111,7 +111,8 @@ templates.env.globals["home_url"] = home_url
 def render(request: Request, name: str, context: dict, session: auth.Session | None = None,
            status_code: int = 200):
     """Render a template with the CSRF token available to every form."""
-    context = {"csrf_token": session.csrf_token if session else "", **context}
+    context = {"csrf_token": session.csrf_token if session else "", "signed_in": session is not None,
+               "nav_active": "recipes", **context}
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 

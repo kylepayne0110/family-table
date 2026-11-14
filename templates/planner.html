@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, flash %}
+
+{% block title %}Meal Planner · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/js/live.js') }}" defer></script>
+<script src="{{ url_for('static', path='/js/planner.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="week-head">
+    <div>
+        <p class="eyebrow">Dinner, Monday to Sunday</p>
+        <h1 class="display display--sm">This week's <em>table</em></h1>
+    </div>
+    {% with week_base = "/plan" %}{% include "_week_nav.html" %}{% endwith %}
+</section>
+
+{% if recipe_total == 0 %}
+<p class="plan-empty-box">The recipe box is empty. <a class="text-link-inline" href="/recipes/new">Add a recipe</a> first, then plan it here.</p>
+{% endif %}
+
+<p class="sync-status" data-sync-status role="status" aria-live="polite" hidden></p>
+
+<div data-live data-live-url="/plan/{{ week_iso }}/live" data-version="{{ plan_version }}">
+    {% include "_plan_board.html" %}
+</div>
+{% endblock %}

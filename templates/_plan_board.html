@@ -1,0 +1,101 @@
+{# The weekly board. Rendered inside planner.html and on its own for live updates. #}
+{% from "_macros.html" import icon %}
+<p class="plan-hint">
+    <span class="plan-hint__drag">Drag {{ icon("grip", 16) }} to move a dinner. Two dinners swap days.</span>
+    <span class="plan-hint__count">{{ planned_count }} of 7 dinners planned</span>
+</p>
+
+<ol class="plan-board" data-plan-board data-week="{{ week_iso }}">
+{% for d in days %}
+    <li class="day-card{% if d.is_today %} is-today{% endif %}{% if not d.recipe %} is-empty{% endif %}" id="day-{{ d.index }}" data-day="{{ d.index }}">
+        <div class="day-card__head">
+            <p class="day-card__day">{{ d.name }}</p>
+            <p class="day-card__date">{{ d.date.strftime("%b %-d") }}</p>
+            {% if d.is_today %}<span class="hand-tag day-card__tonight">tonight</span>{% endif %}
+        </div>
+
+        <div class="day-card__slot" data-slot>
+        {% if d.recipe %}
+            {% set r = d.recipe %}
+            <div class="day-card__meal">
+                <button type="button" class="drag-handle" data-drag-handle aria-label="Drag {{ r.name }} to another day" title="Drag to another day">{{ icon("grip", 20) }}</button>
+                <a class="day-card__photo" href="/recipes/{{ r.id }}" tabindex="-1" aria-hidden="true">
+                    {% if r.photo_filename %}
+                        <img src="/photos/{{ r.photo_filename }}" alt="" loading="lazy" decoding="async">
+                    {% else %}
+                        {{ icon("plate", 28) }}
+                    {% endif %}
+                </a>
+                <div class="day-card__info">
+                    <a class="day-card__title" href="/recipes/{{ r.id }}">{{ r.name }}</a>
+                    {% set minutes = (r.prep_minutes or 0) + (r.cook_minutes or 0) %}
+                    {% if minutes %}<p class="day-card__time">{{ icon("clock", 13) }}{{ minutes | duration }}</p>{% endif %}
+                </div>
+            </div>
+            <div class="day-card__actions">
+                <a class="mini-link" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose">Change</a>
+                <details class="move-menu">
+                    <summary class="mini-link">Move</summary>
+                    <form class="move-menu__form" method="post" action="/plan/{{ week_iso }}/move" data-plan-form>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="from_day" value="{{ d.index }}">
+                        <label class="visually-hidden" for="move-{{ d.index }}">Move {{ r.name }} to</label>
+                        <select id="move-{{ d.index }}" name="to_day">
+                            {% for other in days if other.index != d.index %}
+                            <option value="{{ other.index }}">{{ other.name }}{% if other.recipe %} (swap){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-outline btn-sm">Move</button>
+                    </form>
+                </details>
+                <form method="post" action="/plan/{{ week_iso }}/day/{{ d.index }}/clear" data-plan-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="mini-link mini-link--muted" aria-label="Remove {{ r.name }} from {{ d.name }}">Remove</button>
+                </form>
+            </div>
+        {% else %}
+            <a class="day-card__add" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose" aria-label="Add dinner for {{ d.name }}">
+                {{ icon("plus", 18) }}<span>Add dinner</span>
+            </a>
+            <p class="day-card__blank">Leftovers, a night out, or nothing planned</p>
+        {% endif %}
+        </div>
+    </li>
+{% endfor %}
+</ol>
+
+<section class="list-panel{% if list_status == 'outdated' %} is-outdated{% endif %}" aria-label="Shopping list">
+    {% if list_status == "outdated" %}
+        <div class="list-panel__text">
+            <p class="list-panel__title">The plan changed since the shopping list was made</p>
+            <p>Updating keeps what you've already checked off and anything you added by hand.</p>
+        </div>
+        <div class="list-panel__actions">
+            <form method="post" action="/plan/{{ week_iso }}/shopping-list">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-primary btn-lg">{{ icon("basket", 18) }}Update Shopping List</button>
+            </form>
+            <a class="text-link" href="/shopping?week={{ week_iso }}">Open the current list</a>
+        </div>
+    {% elif list_status == "current" %}
+        <div class="list-panel__text">
+            <p class="list-panel__title">{{ icon("check", 16) }}Shopping list is up to date</p>
+            <p>Moving dinners between days doesn't change the groceries.</p>
+        </div>
+        <div class="list-panel__actions">
+            <a class="btn btn-primary btn-lg" href="/shopping?week={{ week_iso }}">{{ icon("basket", 18) }}Open Shopping List</a>
+        </div>
+    {% else %}
+        <div class="list-panel__text">
+            <p class="list-panel__title">Ready to shop?</p>
+            <p>Gathers every ingredient from this week's dinners, combines matches, and sets kitchen staples aside.</p>
+        </div>
+        <div class="list-panel__actions">
+            <form method="post" action="/plan/{{ week_iso }}/shopping-list">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-primary btn-lg"{% if not planned_count %} disabled{% endif %}>{{ icon("basket", 18) }}Generate Shopping List</button>
+            </form>
+            {% if not planned_count %}<p class="list-panel__hint">Plan at least one dinner first.</p>{% endif %}
+        </div>
+    {% endif %}
+</section>

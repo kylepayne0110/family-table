@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}Choose dinner · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/plan?week={{ week_iso }}#day-{{ day }}">{{ icon("arrow-left", 16) }}Back to the planner</a>
+
+<section class="pick-head">
+    <p class="eyebrow">{{ day_date.strftime("%A, %B %-d") }}</p>
+    <h1 class="display display--sm">What's for <em>{{ day_name }}?</em></h1>
+</section>
+
+<form class="pick-search header-search" role="search" method="get" action="/plan/{{ week_iso }}/day/{{ day }}/choose">
+    <label class="visually-hidden" for="pick-q">Search recipes</label>
+    {{ icon("search", 18) }}
+    <input id="pick-q" type="search" name="q" value="{{ q }}" placeholder="Search recipes" maxlength="100" autocomplete="off" data-filter-input="pick">
+</form>
+
+<ul class="pick-grid" data-filter-list="pick">
+    {% for r in recipes %}
+    <li data-filter-text="{{ r.name | lower }}">
+        <form method="post" action="/plan/{{ week_iso }}/day/{{ day }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="recipe_id" value="{{ r.id }}">
+            <button type="submit" class="pick-tile{% if r.id == current_id %} is-current{% endif %}">
+                <span class="pick-tile__photo">
+                    {% if r.photo_filename %}<img src="/photos/{{ r.photo_filename }}" alt="" loading="lazy" decoding="async">{% else %}{{ icon("plate", 28) }}{% endif %}
+                </span>
+                <span class="pick-tile__name">{{ r.name }}</span>
+                {% if r.id == current_id %}<span class="hand-tag pick-tile__tag">planned</span>{% endif %}
+            </button>
+        </form>
+    </li>
+    {% endfor %}
+</ul>
+<p class="pick-none" data-filter-empty="pick"{% if recipes %} hidden{% endif %}>
+    No recipes match that. <a class="text-link-inline" href="/plan/{{ week_iso }}/day/{{ day }}/choose">Show all recipes</a>
+</p>
+{% endblock %}

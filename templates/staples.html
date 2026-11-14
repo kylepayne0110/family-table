@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, flash %}
+
+{% block title %}Kitchen Staples · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/shopping?week={{ week_iso }}">{{ icon("arrow-left", 16) }}Back to the shopping list</a>
+{{ flash(message) }}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="pick-head">
+    <p class="eyebrow">Always in the kitchen</p>
+    <h1 class="display display--sm">Kitchen <em>Staples</em></h1>
+    <p class="staples-intro">Things you usually keep at home. They're left off the Need to Buy list automatically. When you run out, tap <strong>Add to list</strong> and they stay staples.</p>
+</section>
+
+<form class="add-item" method="post" action="/staples">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="week" value="{{ week_iso }}">
+    <label class="visually-hidden" for="staple-name">Add a staple</label>
+    <input id="staple-name" class="add-item__name" type="text" name="name" value="{{ name }}" placeholder="Add a staple, e.g. Cumin" maxlength="80" autocomplete="off" required>
+    <button type="submit" class="btn btn-primary add-item__btn">{{ icon("plus", 18) }}<span>Add</span></button>
+</form>
+
+<form class="pick-search header-search" role="search" method="get" action="/staples">
+    <input type="hidden" name="week" value="{{ week_iso }}">
+    <label class="visually-hidden" for="staple-q">Search staples</label>
+    {{ icon("search", 18) }}
+    <input id="staple-q" type="search" name="q" value="{{ q }}" placeholder="Search {{ staples | length }} staples" maxlength="80" autocomplete="off" data-filter-input="staples">
+</form>
+
+<ul class="staple-list" data-filter-list="staples">
+    {% for st in staples %}
+    <li class="staple" data-filter-text="{{ st.name | lower }}">
+        <span class="staple__name">{{ st.name }}</span>
+        <form method="post" action="/staples/{{ st.id }}/list">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="week" value="{{ week_iso }}">
+            <button type="submit" class="btn btn-outline btn-sm" aria-label="Add {{ st.name }} to this week's shopping list">Add to list</button>
+        </form>
+        <details class="item-menu">
+            <summary class="item-menu__toggle" aria-label="Edit or remove {{ st.name }}">{{ icon("dots", 20) }}</summary>
+            <div class="item-menu__panel">
+                <form class="item-edit" method="post" action="/staples/{{ st.id }}/edit">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="week" value="{{ week_iso }}">
+                    <label for="staple-{{ st.id }}">Name</label>
+                    <input id="staple-{{ st.id }}" type="text" name="name" value="{{ st.name }}" maxlength="80" required>
+                    <button type="submit" class="btn btn-outline btn-sm">Save</button>
+                </form>
+                <form method="post" action="/staples/{{ st.id }}/delete">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="week" value="{{ week_iso }}">
+                    <button type="submit" class="menu-button menu-button--danger">Remove from staples</button>
+                </form>
+            </div>
+        </details>
+    </li>
+    {% endfor %}
+</ul>
+<p class="pick-none" data-filter-empty="staples"{% if staples %} hidden{% endif %}>No staples match that.</p>
+{% endblock %}

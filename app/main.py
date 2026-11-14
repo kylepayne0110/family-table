@@ -22,6 +22,7 @@ from app.auth import LoginLimiter, LoginRequired
 from app.config import BASE_DIR, Settings, load_settings
 from app.database import init_db
 from app.recipe_import import cleanup_temp_photos
+from app.plan_routes import router as plan_router
 from app.routes import render, router
 
 
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # For example, /static/css/styles.css loads our stylesheet.
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     app.include_router(router)
+    app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
