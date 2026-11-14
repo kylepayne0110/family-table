@@ -1,3 +1,7 @@
-fastapi
-uvicorn
-jinja2
+# Runtime dependencies for Family Table.
+fastapi==0.162.7          # web framework
+uvicorn==0.54.0           # ASGI server
+jinja2==3.1.6             # HTML templates
+python-multipart==0.0.33  # form and file-upload parsing
+pillow==13.0.0            # photo validation and resizing
+python-dotenv==1.2.4      # loads settings from .env

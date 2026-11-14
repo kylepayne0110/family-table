@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import wordmark %}
+
+{% block title %}{{ status }} · Family Table{% endblock %}
+
+{% block header %}
+<header class="site-header">
+    <div class="header-inner">{{ wordmark() }}</div>
+</header>
+{% endblock %}
+
+{% block content %}
+<section class="error-page">
+    <div class="index-card error-card">
+        <div class="index-card__head">
+            <h1 class="error-card__title">{{ "Not in the box" if status == 404 else "Hmm, that didn't work" }}</h1>
+            <span class="eyebrow">Error {{ status }}</span>
+        </div>
+        <div class="index-card__lines error-card__body">
+            <p>{{ message }}</p>
+            <a class="btn btn-primary" href="/">Back to the recipes</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

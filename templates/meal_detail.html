@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% from "_macros.html" import wordmark, icon, photo_placeholder, flash %}
+
+{% block title %}{{ recipe.name }} · Family Table{% endblock %}
+
+{% block header %}
+<header class="site-header">
+    <div class="header-inner header-inner--page">
+        <a class="back-link" href="/">{{ icon("arrow-left", 16) }}All recipes</a>
+        {{ wordmark() }}
+        <a class="btn btn-outline header-inner__end" href="/recipes/{{ recipe.id }}/edit">{{ icon("pencil", 16) }}Edit recipe</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+
+<article class="recipe">
+    <header class="recipe__head">
+        <p class="eyebrow">
+            {{ recipe.id | card_no }} &middot; {{ categories[recipe.category] or recipe.category }}{% if recipe.cuisine %} &middot; {{ recipe.cuisine }}{% endif %}
+        </p>
+        <h1 class="recipe__title">{{ recipe.name }}</h1>
+        {% if recipe.description %}<p class="recipe__lede">{{ recipe.description }}</p>{% endif %}
+    </header>
+
+    <dl class="info-strip">
+        <div class="info-strip__item">
+            <dt>Prep time</dt>
+            <dd>{{ (recipe.prep_minutes | duration) or "—" }}</dd>
+        </div>
+        <div class="info-strip__item">
+            <dt>Cook time</dt>
+            <dd>{{ (recipe.cook_minutes | duration) or "—" }}</dd>
+        </div>
+        <div class="info-strip__item">
+            <dt>Servings</dt>
+            <dd>{{ recipe.servings or "—" }}</dd>
+        </div>
+        <div class="info-strip__item info-strip__item--made">
+            <dt>Last made</dt>
+            <dd>
+                {% if recipe.last_made %}{{ recipe.last_made | long_date }}{% else %}<span class="info-strip__empty">Not yet recorded</span>{% endif %}
+            </dd>
+            {% if made_today %}
+                <p class="made-today">{{ icon("check", 14) }}Made today</p>
+            {% else %}
+                <form method="post" action="/recipes/{{ recipe.id }}/made">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="link-button link-button--accent">We made it today</button>
+                </form>
+            {% endif %}
+        </div>
+    </dl>
+
+    <figure class="recipe__photo">
+        {% if recipe.photo_filename %}
+            <img src="/photos/{{ recipe.photo_filename }}" alt="{{ recipe.name }}">
+        {% else %}
+            {{ photo_placeholder("Add a photo when you edit this recipe") }}
+        {% endif %}
+    </figure>
+
+    <div class="recipe__body">
+        <section class="ingredients" aria-labelledby="ingredients-title">
+            <div class="col-head">
+                <h2 id="ingredients-title">Ingredients</h2>
+                {% if recipe.ingredients %}
+                <p class="eyebrow" data-ingredient-count aria-live="polite">0 of {{ recipe.ingredients | length }} ready</p>
+                {% endif %}
+            </div>
+
+            {% if recipe.ingredients %}
+            <ul class="ingredient-list" data-ingredients="{{ recipe.id }}">
+                {% for item in recipe.ingredients %}
+                <li>
+                    <label class="ingredient">
+                        <input type="checkbox" class="ingredient__input">
+                        <span class="ingredient__box" aria-hidden="true"></span>
+                        <span class="ingredient__text">
+                            {% if item.amount %}<span class="ingredient__amount">{{ item.amount }}</span>{% endif %}
+                            {{ item.name }}
+                        </span>
+                    </label>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted-copy">No ingredients yet. <a class="text-link-inline" href="/recipes/{{ recipe.id }}/edit">Add them</a>.</p>
+            {% endif %}
+        </section>
+
+        <section class="method" aria-labelledby="method-title">
+            <div class="col-head">
+                <h2 id="method-title">How to make it</h2>
+            </div>
+            {% if recipe.steps %}
+            <ol class="steps">
+                {% for step in recipe.steps %}
+                <li class="step">
+                    <span class="step__num" aria-hidden="true">{{ "%02d" | format(loop.index) }}</span>
+                    <div class="step__content">
+                        {% if step.title %}<h3 class="step__title">{{ step.title }}</h3>{% endif %}
+                        <p class="step__body">{{ step.body }}</p>
+                    </div>
+                </li>
+                {% endfor %}
+            </ol>
+            {% else %}
+            <p class="muted-copy">No steps written down yet. <a class="text-link-inline" href="/recipes/{{ recipe.id }}/edit">Add them</a>.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <section class="notes" id="notes" aria-labelledby="notes-title">
+        <div class="notes__head">
+            <h2 class="section-title" id="notes-title">Notes from the <em>kitchen</em></h2>
+            <a class="text-link" href="#note-form" data-note-toggle aria-controls="note-form">{{ icon("plus", 16) }}Add a note</a>
+        </div>
+
+        <form id="note-form" class="index-card note-form{% if not note_error %} js-collapsed{% endif %}"
+              method="post" action="/recipes/{{ recipe.id }}/notes">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="index-card__head">
+                <h3 class="note-form__title">A new note</h3>
+                <span class="eyebrow">For the back of the card</span>
+            </div>
+            <div class="note-form__body">
+                {% if note_error %}<p class="form-alert" role="alert">{{ note_error }}</p>{% endif %}
+                <div class="field">
+                    <label for="note-body">Note</label>
+                    <textarea id="note-body" name="body" rows="3" maxlength="1000" required
+                              placeholder="Double the garlic. Trust me.">{{ note_values.body if note_values else "" }}</textarea>
+                </div>
+                <div class="note-form__row">
+                    <div class="field">
+                        <label for="note-author">From</label>
+                        <input id="note-author" name="author" type="text" maxlength="40" required
+                               placeholder="Mom, Dad…" value="{{ note_values.author if note_values else "" }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Save note</button>
+                </div>
+            </div>
+        </form>
+
+        {% if recipe.notes %}
+        <div class="notes__grid">
+            {% for note in recipe.notes %}
+            <article class="note-card">
+                <p class="note-card__body">{{ note.body }}</p>
+                <p class="note-card__sig">~ {{ note.author }}, {{ note.created_at | month_year }}</p>
+                <form method="post" action="/recipes/{{ recipe.id }}/notes/{{ note.id }}/delete"
+                      class="note-card__delete" data-confirm="Remove this note?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="icon-button" aria-label="Remove note from {{ note.author }}">{{ icon("x", 16) }}</button>
+                </form>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted-copy">No notes yet. Jot down a tweak, a memory, or who loved it.</p>
+        {% endif %}
+    </section>
+</article>
+{% endblock %}

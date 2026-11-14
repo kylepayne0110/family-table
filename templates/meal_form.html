@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% from "_macros.html" import wordmark, icon %}
+
+{% set editing = recipe is not none %}
+{% set back_url = "/recipes/%d" | format(recipe.id) if editing else "/" %}
+
+{% block title %}{{ "Edit " ~ recipe.name if editing else "Add a recipe" }} · Family Table{% endblock %}
+
+{% block header %}
+<header class="site-header">
+    <div class="header-inner header-inner--page">
+        <a class="back-link" href="{{ back_url }}">{{ icon("arrow-left", 16) }}{{ "Back to recipe" if editing else "All recipes" }}</a>
+        {{ wordmark() }}
+        <span class="header-inner__end"></span>
+    </div>
+</header>
+{% endblock %}
+
+{# One ingredient row; reused for the JavaScript "add" template. #}
+{% macro ingredient_row(item={}) -%}
+<div class="row-item ingredient-row" data-row>
+    <div class="field field--amount">
+        <label class="visually-hidden">Amount</label>
+        <input type="text" name="ingredient_amount" value="{{ item.amount or '' }}" placeholder="1 cup" maxlength="50" aria-label="Amount">
+    </div>
+    <div class="field field--grow">
+        <input type="text" name="ingredient_name" value="{{ item.name or '' }}" placeholder="Ingredient" maxlength="200" aria-label="Ingredient">
+    </div>
+    <button type="button" class="icon-button" data-remove-row aria-label="Remove ingredient">{{ icon("x", 16) }}</button>
+</div>
+{%- endmacro %}
+
+{% macro step_row(step={}, number=1) -%}
+<div class="row-item step-row" data-row>
+    <span class="step-row__num" data-step-number aria-hidden="true">{{ "%02d" | format(number) }}</span>
+    <div class="step-row__fields">
+        <input type="text" name="step_title" value="{{ step.title or '' }}" placeholder="Step title (optional)" maxlength="80" aria-label="Step title">
+        <textarea name="step_body" rows="3" maxlength="2000" placeholder="What to do…" aria-label="Step instructions">{{ step.body or '' }}</textarea>
+    </div>
+    <button type="button" class="icon-button" data-remove-row aria-label="Remove step">{{ icon("x", 16) }}</button>
+</div>
+{%- endmacro %}
+
+{% block content %}
+<header class="form-head">
+    <p class="eyebrow">{{ (recipe.id | card_no) if editing else "A new card for the box" }}</p>
+    <h1 class="display display--sm">
+        {% if editing %}Edit <em>recipe</em>{% else %}Add a new <em>recipe</em>{% endif %}
+    </h1>
+</header>
+
+{% if errors %}
+<div class="form-errors" role="alert" tabindex="-1" data-focus-on-load>
+    <p class="form-errors__title">A few things need a look before we can save:</p>
+    <ul>
+        {% for message in errors.values() %}<li>{{ message }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<form class="recipe-form" method="post" enctype="multipart/form-data"
+      action="{{ '/recipes/%d/edit' | format(recipe.id) if editing else '/recipes/new' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <section class="form-card">
+        <h2 class="form-card__title">The basics</h2>
+
+        <div class="field{% if errors.name %} has-error{% endif %}">
+            <label for="name">Recipe name <span class="req">required</span></label>
+            <input id="name" name="name" type="text" value="{{ values.name }}" maxlength="120" required>
+            {% if errors.name %}<p class="field-error">{{ errors.name }}</p>{% endif %}
+        </div>
+
+        <div class="field{% if errors.description %} has-error{% endif %}">
+            <label for="description">Short description</label>
+            <textarea id="description" name="description" rows="2" maxlength="600"
+                      placeholder="One or two lines about why it's a keeper.">{{ values.description }}</textarea>
+            {% if errors.description %}<p class="field-error">{{ errors.description }}</p>{% endif %}
+        </div>
+
+        <div class="field-grid">
+            <div class="field{% if errors.category %} has-error{% endif %}">
+                <label for="category">Category <span class="req">required</span></label>
+                <select id="category" name="category" required>
+                    {% for key, label in categories.items() %}
+                    <option value="{{ key }}" {% if values.category == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                {% if errors.category %}<p class="field-error">{{ errors.category }}</p>{% endif %}
+            </div>
+            <div class="field{% if errors.cuisine %} has-error{% endif %}">
+                <label for="cuisine">Cuisine or label</label>
+                <input id="cuisine" name="cuisine" type="text" value="{{ values.cuisine }}" maxlength="40" placeholder="Tex-Mex">
+                {% if errors.cuisine %}<p class="field-error">{{ errors.cuisine }}</p>{% endif %}
+            </div>
+            <div class="field{% if errors.card_tag %} has-error{% endif %}">
+                <label for="card_tag">Handwritten tag</label>
+                <input id="card_tag" name="card_tag" type="text" value="{{ values.card_tag }}" maxlength="30" placeholder="Dad's favorite">
+                {% if errors.card_tag %}<p class="field-error">{{ errors.card_tag }}</p>{% endif %}
+            </div>
+        </div>
+    </section>
+
+    <section class="form-card">
+        <h2 class="form-card__title">Timing</h2>
+        <div class="field-grid field-grid--4">
+            <div class="field{% if errors.prep_minutes %} has-error{% endif %}">
+                <label for="prep_minutes">Prep (minutes)</label>
+                <input id="prep_minutes" name="prep_minutes" type="number" inputmode="numeric" min="0" max="1440" value="{{ values.prep_minutes }}">
+                {% if errors.prep_minutes %}<p class="field-error">{{ errors.prep_minutes }}</p>{% endif %}
+            </div>
+            <div class="field{% if errors.cook_minutes %} has-error{% endif %}">
+                <label for="cook_minutes">Cook (minutes)</label>
+                <input id="cook_minutes" name="cook_minutes" type="number" inputmode="numeric" min="0" max="1440" value="{{ values.cook_minutes }}">
+                {% if errors.cook_minutes %}<p class="field-error">{{ errors.cook_minutes }}</p>{% endif %}
+            </div>
+            <div class="field{% if errors.servings %} has-error{% endif %}">
+                <label for="servings">Servings</label>
+                <input id="servings" name="servings" type="number" inputmode="numeric" min="1" max="100" value="{{ values.servings }}">
+                {% if errors.servings %}<p class="field-error">{{ errors.servings }}</p>{% endif %}
+            </div>
+            <div class="field{% if errors.last_made %} has-error{% endif %}">
+                <label for="last_made">Last made</label>
+                <input id="last_made" name="last_made" type="date" value="{{ values.last_made }}">
+                {% if errors.last_made %}<p class="field-error">{{ errors.last_made }}</p>{% endif %}
+            </div>
+        </div>
+    </section>
+
+    <section class="form-card">
+        <h2 class="form-card__title">Photo</h2>
+        <div class="photo-field{% if errors.photo %} has-error{% endif %}">
+            <div class="photo-field__preview" data-photo-preview>
+                {% if editing and recipe.photo_filename %}
+                    <img src="/photos/{{ recipe.photo_filename }}" alt="Current photo of {{ recipe.name }}">
+                {% else %}
+                    <span class="photo-field__empty">{{ icon("camera", 28) }}</span>
+                {% endif %}
+            </div>
+            <div class="field">
+                <label for="photo">{{ "Replace photo" if editing and recipe.photo_filename else "Upload a photo" }}</label>
+                <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" data-photo-input>
+                <p class="field-hint">JPEG, PNG, or WebP, up to {{ request.app.state.settings.max_upload_mb }} MB. Large photos are resized automatically.</p>
+                {% if errors.photo %}<p class="field-error">{{ errors.photo }}</p>{% endif %}
+                {% if editing and recipe.photo_filename %}
+                <label class="check-row check-row--small">
+                    <input type="checkbox" name="remove_photo">
+                    <span>Remove the current photo</span>
+                </label>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <section class="form-card{% if errors.ingredients %} has-error{% endif %}">
+        <h2 class="form-card__title">Ingredients</h2>
+        <p class="field-hint">One per line: an amount (like &ldquo;2 cups&rdquo;) and the ingredient.</p>
+        {% if errors.ingredients %}<p class="field-error">{{ errors.ingredients }}</p>{% endif %}
+        <div class="rows" data-rows="ingredients">
+            {% for item in values.ingredients %}{{ ingredient_row(item) }}{% endfor %}
+            {% for _ in range([4 - values.ingredients | length, 1] | max) %}{{ ingredient_row() }}{% endfor %}
+        </div>
+        <template data-row-template="ingredients">{{ ingredient_row() }}</template>
+        <button type="button" class="btn btn-ghost" data-add-row="ingredients">{{ icon("plus", 16) }}Add ingredient</button>
+    </section>
+
+    <section class="form-card{% if errors.steps %} has-error{% endif %}">
+        <h2 class="form-card__title">How to make it</h2>
+        {% if errors.steps %}<p class="field-error">{{ errors.steps }}</p>{% endif %}
+        <div class="rows" data-rows="steps">
+            {% for step in values.steps %}{{ step_row(step, loop.index) }}{% endfor %}
+            {% set start = values.steps | length %}
+            {% for n in range([2 - start, 1] | max) %}{{ step_row({}, start + loop.index) }}{% endfor %}
+        </div>
+        <template data-row-template="steps">{{ step_row() }}</template>
+        <button type="button" class="btn btn-ghost" data-add-row="steps">{{ icon("plus", 16) }}Add step</button>
+    </section>
+
+    {% if not editing %}
+    <section class="form-card">
+        <h2 class="form-card__title">A note for the card <span class="req">optional</span></h2>
+        <div class="field{% if errors.note_body %} has-error{% endif %}">
+            <label for="note_body">Note</label>
+            <textarea id="note_body" name="note_body" rows="2" maxlength="1000" placeholder="Grandma always added a pinch of cinnamon.">{{ values.note_body }}</textarea>
+            {% if errors.note_body %}<p class="field-error">{{ errors.note_body }}</p>{% endif %}
+        </div>
+        <div class="field field--narrow{% if errors.note_author %} has-error{% endif %}">
+            <label for="note_author">From</label>
+            <input id="note_author" name="note_author" type="text" value="{{ values.note_author }}" maxlength="40" placeholder="Mom">
+            {% if errors.note_author %}<p class="field-error">{{ errors.note_author }}</p>{% endif %}
+        </div>
+    </section>
+    {% endif %}
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ "Save changes" if editing else "Save recipe" }}</button>
+        <a class="btn btn-outline" href="{{ back_url }}">Cancel</a>
+    </div>
+</form>
+
+{% if editing %}
+<form class="danger-zone" method="post" action="/recipes/{{ recipe.id }}/delete"
+      data-confirm="Delete “{{ recipe.name }}” and all of its notes? This can't be undone.">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p>No longer cooking this one?</p>
+    <button type="submit" class="link-button link-button--danger">Delete this recipe</button>
+</form>
+{% endif %}
+{% endblock %}

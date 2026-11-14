@@ -1,0 +1,4 @@
+# Development and test tools (not needed on the server).
+-r requirements.txt
+pytest==9.2.0             # test runner
+httpx2==2.16.0            # used by the TestClient (Starlette 1.x)

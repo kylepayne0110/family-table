@@ -3,22 +3,36 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+htmlcov/
 
-# Secrets
+# Secrets and private local configuration
 .env
 .env.*
 !.env.example
+.claude/settings.local.json
 
 # Local database
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 *.sqlite
 *.sqlite3
 
-# Uploaded family photos
+# Family data: recipes database and uploaded photos
+data/*
+!data/uploads/
 data/uploads/*
+!data/uploads/.gitkeep
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
 
 # Editor and operating system files
 .vscode/
 .DS_Store
+Thumbs.db
