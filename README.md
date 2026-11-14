@@ -11,6 +11,9 @@ Our family's digital recipe box: one private place to save every meal we know ho
 - **Notes from the kitchen** on index cards, signed by name (`~ Mom, Oct 2025`)
 - Add/edit/delete recipes with photo upload, adjustable ingredient and step rows, and server-side validation
 - **Import from a website**: paste a recipe link, and the Add Recipe form fills in the name, description, times, servings, ingredients, steps, and photo for you to review before saving. Imported recipes link back to the **Original recipe**.
+- **Meal Planner**: plan dinner for Monday to Sunday from your recipes, drag dinners between days (mouse or touch; two dinners swap), leave days blank, and browse past or future weeks
+- **Shopping List**: one tap builds the week's grocery list, combining matching ingredients ("Ground beef 3 lbs, from Taco Bowls (1 lb) and Burgers (2 lbs)") and setting Kitchen Staples aside. At the store, tap an item once and it moves to Purchased. Changes show up on the other phone within a few seconds.
+- **Kitchen Staples**: the shared list of things you always have (salt, butter, olive oil...). They're left off Need to Buy, and you can add one back when you run out.
 - Responsive down to 320px wide phones
 
 ## Technology
@@ -40,10 +43,14 @@ family-table/
 │   ├── images.py        # Photo validation and processing
 │   ├── recipe_import.py # Import from a website: extract recipe data, map to the form
 │   ├── safe_fetch.py    # Safe downloads from user-supplied URLs (SSRF protection)
+│   ├── planner.py       # Weekly dinner plans (weeks, days, moving/swapping)
+│   ├── ingredients.py   # Parse, normalize, and combine ingredient lines (no database)
+│   ├── shopping.py      # Shopping lists, list updates, item states, Kitchen Staples
+│   ├── plan_routes.py   # Pages/actions for the planner, shopping list, and staples
 │   ├── setup_login.py   # CLI: set the shared username/password
 │   └── seed.py          # CLI: optional sample recipes (development only)
 ├── templates/           # Jinja2 pages (+ _macros.html for shared pieces)
-├── static/              # styles.css, main.js, favicon
+├── static/              # styles.css, main.js (+ live.js, planner.js, shopping.js), favicon
 ├── tests/               # pytest suite
 ├── data/                # ← your family's data (git-ignored)
 │   ├── family_table.db  #   created automatically on first start
@@ -116,7 +123,30 @@ Limitations:
 - Sites that block automated requests (for example with a 403 error or a CAPTCHA), require a login, or are paywalled can't be imported, and Family Table doesn't try to get around that. Some sites also rate-limit repeated requests.
 - Pages that build the recipe with JavaScript and have no structured data in the HTML won't be found.
 - The category isn't guessed (except obvious soups), so pick one before saving.
+
+Meal planner and shopping list limitations:
+
+- Ingredient matching is deliberately cautious, so near-matches with different wording ("Jalapeño" and "jalapeño peppers") can appear as two lines. That's better than wrongly merging different things.
+- Mixed volume totals are written out exactly ("1 1/2 cups + 2 tsp") rather than rounded.
+- Items aren't grouped by store aisle.
+- Updates reach the other phone within about 5 seconds, not instantly.
 - Ingredient splitting covers common formats. Unusual lines keep the whole text in the ingredient name.
+
+## Meal Planner and Shopping List
+
+1. **Meal Planner**: tap **Add dinner** on a day and pick a recipe. Drag the ⋮⋮ handle to move a dinner; dropping it on another dinner swaps them. Tapping the handle (or **Move**) opens a simple Move menu instead. Blank days add nothing to the list.
+2. **Generate Shopping List** gathers every planned recipe's ingredients. If you change the plan later, the planner and list say so and the button becomes **Update Shopping List**. Only moving dinners between days doesn't count as a change, because the groceries are the same.
+3. **Shopping List** has three states: **Need to Buy**, **Already have**, and **Purchased**. Kitchen Staples sit in their own collapsed section. Use **Add an item...** for anything else (paper towels, bananas). Every list is saved per week, and old weeks stay available.
+
+How combining works (`app/ingredients.py`, plain Python, no AI):
+
+- Names are normalized conservatively: case, plurals, accents, notes in parentheses, and preparation words ("finely chopped", "melted", "lean") are ignored, and a few synonyms are mapped ("kosher salt" counts as salt, "garlic cloves" as garlic). Words that change the product are kept, so garlic and garlic powder, dried and fresh herbs, and crushed and plain tomatoes stay separate. Plain "butter" merges into "unsalted butter" only when that's the only kind on the list.
+- Quantities are added with exact fractions. Units convert only within a family (3 tsp = 1 tbsp, 4 tbsp = 1/4 cup, 16 oz = 1 lb). Volume and weight are never mixed. Ranges ("2-3 cups") and anything unclear are kept exactly as written, and nothing is guessed.
+- Each item keeps its sources: which recipes need it and how much, linked to the recipe pages.
+
+Updating a list never resets it. Items keep their id and their Purchased or Already have state. Hand-added items always stay. If a purchased item now needs more, it moves back to Need to Buy with a note ("Need more: was 3 lbs, now 4 lbs"). Ingredients that are no longer planned are listed for you to **Remove** or **Keep**. Running Update on an unchanged plan changes nothing.
+
+Sharing between phones: each open list asks the server "anything new?" every 5 seconds (8 on the planner), and stops while the tab is hidden. That check is a single tiny query, and the list is only re-sent when its version number has changed. Every change carries the item's revision number, so a phone showing an old list can't overwrite a newer change. It gets the latest list instead. Taps are saved in order and retried automatically if the connection drops. There's no Redis, WebSocket server, or background worker.
 
 ## Settings (`.env`)
 
@@ -134,7 +164,7 @@ Limitations:
 
 Everything personal lives in two places:
 
-1. **`data/`**: `family_table.db` (recipes, ingredients, steps, notes) and `uploads/` (photos)
+1. **`data/`**: `family_table.db` (recipes, notes, meal plans, shopping lists, staples) and `uploads/` (photos)
 2. **`.env`**: your login hash and settings
 
 To back up or move to another computer, copy both. Stop the server first, or use `sqlite3 data/family_table.db ".backup backup.db"` for a safe copy while it runs. Neither is committed to Git.
