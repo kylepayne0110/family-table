@@ -52,6 +52,11 @@ class Settings:
         return self.data_dir / "uploads"
 
     @property
+    def import_dir(self) -> Path:
+        """Photos found by URL import, held here until the recipe is saved."""
+        return self.data_dir / "import-tmp"
+
+    @property
     def login_configured(self) -> bool:
         return bool(self.username and self.password_hash)
 

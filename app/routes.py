@@ -10,8 +10,8 @@ from datetime import date, datetime, timedelta
 # hmac.compare_digest compares the login CSRF token safely.
 import hmac
 
-# urlencode builds query strings for filter links.
-from urllib.parse import urlencode
+# urlencode builds filter links; urlsplit shows an import's website name.
+from urllib.parse import urlencode, urlsplit
 
 # FastAPI routing, dependencies, and errors.
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,7 +32,8 @@ from starlette.datastructures import UploadFile
 from app import auth, meals
 from app.config import BASE_DIR, CATEGORIES
 from app.database import get_db
-from app.images import ImageError, delete_photo, photo_path, process_photo
+from app.images import ImageError, adopt_photo, delete_photo, photo_path, process_photo
+from app.recipe_import import RecipeImportError, import_recipe
 
 
 router = APIRouter()
@@ -93,6 +94,7 @@ templates.env.filters.update(
     duration=duration, total_time=total_time, made_label=made_label,
     long_date=long_date, month_year=month_year,
     card_no=lambda recipe_id: f"No. {recipe_id:02d}",
+    hostname=lambda url: (urlsplit(url).hostname or "").removeprefix("www."),
 )
 templates.env.globals["categories"] = CATEGORIES
 
@@ -219,13 +221,14 @@ EMPTY_VALUES = {
     "name": "", "description": "", "category": "weeknight", "cuisine": "",
     "prep_minutes": "", "cook_minutes": "", "servings": "", "card_tag": "",
     "last_made": "", "note_author": "", "note_body": "",
+    "source_url": "", "imported_photo": "",
     "ingredients": [], "steps": [],
 }
 
 
-def _form_page(request, session, values, errors=None, recipe=None, status_code=200):
+def _form_page(request, session, values, errors=None, recipe=None, status_code=200, **extra):
     return render(request, "meal_form.html", {
-        "values": values, "errors": errors or {}, "recipe": recipe,
+        "values": values, "errors": errors or {}, "recipe": recipe, **extra,
     }, session, status_code)
 
 
@@ -246,6 +249,7 @@ async def _save_from_form(request: Request, session: auth.Session, conn: sqlite3
             errors["photo"] = "Please choose the photo again after fixing the errors above."
         return _form_page(request, session, values, errors, recipe, 422)
 
+    imported = values["imported_photo"]
     if has_upload:
         max_bytes = settings.max_upload_mb * 1024 * 1024
         raw = await upload.read(max_bytes + 1)  # read one extra byte to detect oversize
@@ -253,6 +257,10 @@ async def _save_from_form(request: Request, session: auth.Session, conn: sqlite3
             new_photo = await run_in_threadpool(process_photo, raw, settings.upload_dir, max_bytes)
         except ImageError as exc:
             return _form_page(request, session, values, {"photo": str(exc)}, recipe, 422)
+        delete_photo(settings.import_dir, imported)  # a chosen upload replaces an imported photo
+    elif imported and form.get("discard_imported_photo") != "on":
+        # Photo from "Import from a website": move it from the temp folder into uploads.
+        new_photo = adopt_photo(settings.import_dir, settings.upload_dir, imported)
 
     # Decide which photo the saved recipe should point at.
     if new_photo:
@@ -285,6 +293,27 @@ def new_recipe_form(request: Request, session: auth.Session = Depends(auth.requi
 async def create_recipe(request: Request, session: auth.Session = Depends(auth.require_session),
                         conn: sqlite3.Connection = Depends(get_db)):
     return await _save_from_form(request, session, conn)
+
+
+@router.post("/recipes/import")
+async def import_from_url(request: Request, session: auth.Session = Depends(auth.require_session)):
+    """Fetch a recipe page and show the Add Recipe form pre-filled for review (nothing is saved)."""
+    settings = request.app.state.settings
+    form = await auth.read_form_with_csrf(request, session.csrf_token)
+    url = str(form.get("url") or "").strip()[:2000]
+
+    if not url:
+        return _form_page(request, session, dict(EMPTY_VALUES), status_code=422,
+                          import_error="Paste a link to a recipe page first.", import_url=url)
+    try:
+        values, notes = await run_in_threadpool(
+            import_recipe, url, settings.import_dir, settings.max_upload_mb * 1024 * 1024)
+    except RecipeImportError as exc:
+        return _form_page(request, session, dict(EMPTY_VALUES), status_code=422,
+                          import_error=str(exc), import_url=url)
+
+    return _form_page(request, session, values, import_notes=notes,
+                      imported_from=urlsplit(values["source_url"]).hostname or "")
 
 
 @router.get("/recipes/{recipe_id}")
@@ -372,6 +401,15 @@ async def remove_note(request: Request, recipe_id: int, note_id: int,
 
 
 # ---- Photos (served only to signed-in visitors) ----
+
+@router.get("/photos/import/{filename}")
+def imported_photo(request: Request, filename: str, session: auth.Session = Depends(auth.require_session)):
+    """Preview of a photo found by URL import that hasn't been saved yet."""
+    path = photo_path(request.app.state.settings.import_dir, filename)
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="Photo not found.")
+    return FileResponse(path, media_type="image/webp", headers={"Cache-Control": "private, no-store"})
+
 
 @router.get("/photos/{filename}")
 def photo(request: Request, filename: str, session: auth.Session = Depends(auth.require_session)):

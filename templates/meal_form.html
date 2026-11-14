@@ -49,6 +49,38 @@
     </h1>
 </header>
 
+{% if not editing %}
+<section class="import-card{% if import_error %} has-error{% endif %}" aria-labelledby="import-title">
+    <div class="import-card__text">
+        <h2 class="import-card__title" id="import-title">Import from a <em>website</em></h2>
+        <p>Found a recipe online? Paste the link and we'll fill in the details for you.</p>
+    </div>
+    <form class="import-form" method="post" action="/recipes/import" data-import-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="visually-hidden" for="import_url">Recipe web address</label>
+        <input id="import_url" name="url" type="url" inputmode="url" maxlength="2000" required
+               placeholder="https://www.example.com/best-lasagna" value="{{ import_url or '' }}"
+               {% if import_error %}aria-describedby="import-error"{% endif %}>
+        <button type="submit" class="btn btn-primary">Import recipe</button>
+    </form>
+    {% if import_error %}<p class="field-error" id="import-error" role="alert">{{ import_error }}</p>{% endif %}
+    <p class="import-card__loading" data-import-loading hidden role="status">
+        <span class="spinner" aria-hidden="true"></span>Reading the recipe&hellip; this usually takes a few seconds.
+    </p>
+</section>
+
+{% if imported_from %}
+<div class="import-notice" role="status">
+    <p class="import-notice__title">{{ icon("check", 16) }}Imported from {{ imported_from }}. Look everything over, make it yours, then save.</p>
+    {% if import_notes %}
+    <ul>{% for note in import_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+    {% endif %}
+</div>
+{% else %}
+<p class="or-divider"><span>or write it out by hand</span></p>
+{% endif %}
+{% endif %}
+
 {% if errors %}
 <div class="form-errors" role="alert" tabindex="-1" data-focus-on-load>
     <p class="form-errors__title">A few things need a look before we can save:</p>
@@ -99,6 +131,12 @@
                 {% if errors.card_tag %}<p class="field-error">{{ errors.card_tag }}</p>{% endif %}
             </div>
         </div>
+
+        <div class="field field--spaced{% if errors.source_url %} has-error{% endif %}">
+            <label for="source_url">Original recipe link</label>
+            <input id="source_url" name="source_url" type="url" inputmode="url" value="{{ values.source_url }}" maxlength="500" placeholder="https://…">
+            {% if errors.source_url %}<p class="field-error">{{ errors.source_url }}</p>{% endif %}
+        </div>
     </section>
 
     <section class="form-card">
@@ -131,17 +169,26 @@
         <h2 class="form-card__title">Photo</h2>
         <div class="photo-field{% if errors.photo %} has-error{% endif %}">
             <div class="photo-field__preview" data-photo-preview>
-                {% if editing and recipe.photo_filename %}
+                {% if values.imported_photo %}
+                    <img src="/photos/import/{{ values.imported_photo }}" alt="Photo from the imported recipe">
+                {% elif editing and recipe.photo_filename %}
                     <img src="/photos/{{ recipe.photo_filename }}" alt="Current photo of {{ recipe.name }}">
                 {% else %}
                     <span class="photo-field__empty">{{ icon("camera", 28) }}</span>
                 {% endif %}
             </div>
             <div class="field">
-                <label for="photo">{{ "Replace photo" if editing and recipe.photo_filename else "Upload a photo" }}</label>
+                <label for="photo">{{ "Replace photo" if (editing and recipe.photo_filename) or values.imported_photo else "Upload a photo" }}</label>
                 <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" data-photo-input>
                 <p class="field-hint">JPEG, PNG, or WebP, up to {{ request.app.state.settings.max_upload_mb }} MB. Large photos are resized automatically.</p>
                 {% if errors.photo %}<p class="field-error">{{ errors.photo }}</p>{% endif %}
+                {% if values.imported_photo %}
+                <input type="hidden" name="imported_photo" value="{{ values.imported_photo }}">
+                <label class="check-row check-row--small">
+                    <input type="checkbox" name="discard_imported_photo">
+                    <span>Don't use the imported photo</span>
+                </label>
+                {% endif %}
                 {% if editing and recipe.photo_filename %}
                 <label class="check-row check-row--small">
                     <input type="checkbox" name="remove_photo">

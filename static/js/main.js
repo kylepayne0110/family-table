@@ -121,6 +121,28 @@ function setupNoteToggle() {
   });
 }
 
+// Import from a website: show a loading state while the server fetches the page.
+function setupImportForm() {
+  const form = document.querySelector("[data-import-form]");
+  const loading = document.querySelector("[data-import-loading]");
+  if (!form) return;
+  const button = form.querySelector("button[type=submit]");
+  const label = button.textContent;
+
+  form.addEventListener("submit", () => {
+    button.disabled = true;
+    button.textContent = "Importing\u2026";
+    if (loading) loading.hidden = false;
+  });
+
+  // Reset if the browser restores this page from its back/forward cache.
+  window.addEventListener("pageshow", () => {
+    button.disabled = false;
+    button.textContent = label;
+    if (loading) loading.hidden = true;
+  });
+}
+
 // Move focus to a form's error summary so screen readers announce it.
 function focusErrors() {
   const summary = document.querySelector("[data-focus-on-load]");
@@ -134,5 +156,6 @@ document.addEventListener("DOMContentLoaded", () => {
   setupPhotoPreview();
   setupConfirms();
   setupNoteToggle();
+  setupImportForm();
   focusErrors();
 });

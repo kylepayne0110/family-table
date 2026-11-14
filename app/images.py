@@ -79,6 +79,16 @@ def photo_path(upload_dir: Path, filename: str) -> Path | None:
     return upload_dir / filename
 
 
+def adopt_photo(temp_dir: Path, upload_dir: Path, filename: str) -> str | None:
+    """Move a processed photo from the temporary folder into uploads."""
+    source = photo_path(temp_dir, filename)
+    if source is None or not source.is_file():
+        return None
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    source.replace(upload_dir / filename)  # same disk, so this is an instant rename
+    return filename
+
+
 def delete_photo(upload_dir: Path, filename: str | None) -> None:
     """Remove a stored photo if it exists."""
     path = photo_path(upload_dir, filename or "")

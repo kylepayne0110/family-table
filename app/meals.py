@@ -7,15 +7,21 @@ from dataclasses import dataclass, field
 # date handles "last made" values.
 from datetime import date
 
+# urlsplit checks the optional source link.
+from urllib.parse import urlsplit
+
 # CATEGORIES lists the allowed recipe categories.
 from app.config import CATEGORIES
+
+# FILENAME_PATTERN validates an imported photo's temporary filename.
+from app.images import FILENAME_PATTERN
 
 
 # Field length limits (also keep the layout tidy).
 LIMITS = {
     "name": 120, "description": 600, "cuisine": 40, "card_tag": 30,
     "amount": 50, "ingredient": 200, "step_title": 80, "step_body": 2000,
-    "note_author": 40, "note_body": 1000,
+    "note_author": 40, "note_body": 1000, "source_url": 500,
 }
 MAX_INGREDIENTS = 100
 MAX_STEPS = 50
@@ -23,7 +29,7 @@ MAX_STEPS = 50
 # Columns shown on cards and the featured recipe.
 CARD_COLUMNS = (
     "id, name, description, category, cuisine, prep_minutes, cook_minutes, "
-    "servings, photo_filename, card_tag, last_made"
+    "servings, photo_filename, card_tag, last_made, source_url"
 )
 
 
@@ -44,6 +50,7 @@ class RecipeData:
     steps: list[tuple[str, str]] = field(default_factory=list)  # (title, body)
     note_author: str = ""
     note_body: str = ""
+    source_url: str = ""
 
 
 # ---- Form parsing and validation ----
@@ -95,6 +102,9 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
         "last_made": _text(form, "last_made"),
         "note_author": _text(form, "note_author"),
         "note_body": _text(form, "note_body"),
+        "source_url": _text(form, "source_url"),
+        # A photo found by "Import from a website", waiting to be saved.
+        "imported_photo": _text(form, "imported_photo") if FILENAME_PATTERN.fullmatch(_text(form, "imported_photo")) else "",
         "ingredients": ingredients,
         "steps": steps,
     }
@@ -136,6 +146,13 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
     elif any(len(s["title"]) > LIMITS["step_title"] or len(s["body"]) > LIMITS["step_body"] for s in steps):
         errors["steps"] = "One of the steps is too long."
 
+    if values["source_url"]:
+        link = urlsplit(values["source_url"])
+        if link.scheme not in ("http", "https") or not link.netloc:
+            errors["source_url"] = "The original recipe link should start with http:// or https://."
+        elif len(values["source_url"]) > LIMITS["source_url"]:
+            errors["source_url"] = "That link is too long."
+
     if values["note_body"] and not values["note_author"]:
         errors["note_author"] = "Who's the note from? (e.g. Mom)"
 
@@ -150,6 +167,7 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
         ingredients=[(i["amount"], i["name"]) for i in ingredients],
         steps=[(s["title"], s["body"]) for s in steps],
         note_author=values["note_author"], note_body=values["note_body"],
+        source_url=values["source_url"],
     )
     return values, data, {}
 
@@ -165,6 +183,7 @@ def recipe_to_values(recipe: dict) -> dict:
         "servings": as_text(recipe["servings"]),
         "card_tag": recipe["card_tag"], "last_made": recipe["last_made"] or "",
         "note_author": "", "note_body": "",
+        "source_url": recipe["source_url"], "imported_photo": "",
         "ingredients": [{"amount": i["amount"], "name": i["name"]} for i in recipe["ingredients"]],
         "steps": [{"title": s["title"], "body": s["body"]} for s in recipe["steps"]],
     }
@@ -248,15 +267,16 @@ def save_recipe(conn: sqlite3.Connection, data: RecipeData, photo_filename: str 
                 recipe_id: int | None = None) -> int:
     """Insert or update a recipe and its children in one transaction."""
     fields = (data.name, data.description, data.category, data.cuisine, data.prep_minutes,
-              data.cook_minutes, data.servings, photo_filename, data.card_tag, data.last_made)
+              data.cook_minutes, data.servings, photo_filename, data.card_tag, data.last_made,
+              data.source_url)
 
     # "with conn" commits on success and rolls back on any error.
     with conn:
         if recipe_id is None:
             cur = conn.execute(
                 """INSERT INTO recipes (name, description, category, cuisine, prep_minutes,
-                       cook_minutes, servings, photo_filename, card_tag, last_made)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       cook_minutes, servings, photo_filename, card_tag, last_made, source_url)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 fields,
             )
             recipe_id = cur.lastrowid
@@ -269,7 +289,7 @@ def save_recipe(conn: sqlite3.Connection, data: RecipeData, photo_filename: str 
             conn.execute(
                 """UPDATE recipes SET name = ?, description = ?, category = ?, cuisine = ?,
                        prep_minutes = ?, cook_minutes = ?, servings = ?, photo_filename = ?,
-                       card_tag = ?, last_made = ?, updated_at = datetime('now')
+                       card_tag = ?, last_made = ?, source_url = ?, updated_at = datetime('now')
                    WHERE id = ?""",
                 (*fields, recipe_id),
             )

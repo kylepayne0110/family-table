@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS recipes (
     photo_filename TEXT,
     card_tag       TEXT    NOT NULL DEFAULT '',
     last_made      TEXT,   -- ISO date, e.g. 2026-11-14
+    source_url     TEXT    NOT NULL DEFAULT '',  -- where an imported recipe came from
     created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -66,6 +67,13 @@ CREATE INDEX IF NOT EXISTS idx_notes_recipe ON notes(recipe_id, created_at);
 """
 
 
+# Columns added after the first release: (table, column, definition).
+# Older databases get them via ALTER TABLE; existing rows are kept.
+ADDED_COLUMNS = [
+    ("recipes", "source_url", "TEXT NOT NULL DEFAULT ''"),
+]
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open a connection with foreign keys on and dict-like rows."""
     # check_same_thread=False: FastAPI may hand a request between threads.
@@ -83,9 +91,19 @@ def init_db(db_path: Path) -> None:
         # WAL mode lets reads continue while a write is in progress.
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    """Add any missing columns. Safe to run on every startup."""
+    for table, column, definition in ADDED_COLUMNS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            # Names come from the constant list above, never from user input.
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def get_db(request: Request) -> Iterator[sqlite3.Connection]:

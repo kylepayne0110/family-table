@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.auth import LoginLimiter, LoginRequired
 from app.config import BASE_DIR, Settings, load_settings
 from app.database import init_db
+from app.recipe_import import cleanup_temp_photos
 from app.routes import render, router
 
 
@@ -40,7 +41,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         # Create the data folders and database tables on startup.
         settings.upload_dir.mkdir(parents=True, exist_ok=True)
+        settings.import_dir.mkdir(parents=True, exist_ok=True)
         init_db(settings.database_path)
+        cleanup_temp_photos(settings.import_dir)  # leftovers from abandoned imports
         yield
 
     app = FastAPI(title="Family Table", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
