@@ -8,8 +8,8 @@ from fastapi import FastAPI, Request
 # RequestValidationError is raised for malformed URLs like /recipes/abc.
 from fastapi.exceptions import RequestValidationError
 
-# RedirectResponse sends signed-out visitors to the login page.
-from fastapi.responses import RedirectResponse
+# RedirectResponse sends signed-out visitors to the login page; PlainTextResponse refuses huge uploads.
+from fastapi.responses import PlainTextResponse, RedirectResponse
 
 # StaticFiles allows FastAPI to serve CSS and JavaScript.
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +35,40 @@ CSP = (
 )
 
 
+class BodySizeLimit:
+    """Refuse request bodies bigger than a photo upload plus its form fields.
+
+    Matters once the site is public: without it, anyone could stream a huge body at the
+    sign-in form and fill the disk with temporary upload files.
+    """
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        length = dict(scope["headers"]).get(b"content-length")
+        if length is not None and (not length.isdigit() or int(length) > self.max_bytes):
+            response = PlainTextResponse("That upload is too large.", status_code=413)
+            return await response(scope, receive, send)
+
+        # Bodies sent without a length are counted as they arrive.
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise StarletteHTTPException(status_code=413, detail="That upload is too large.")
+            return message
+
+        return await self.app(scope, limited_receive, send)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app (tests pass their own settings and data folder)."""
     settings = settings or load_settings()
@@ -58,6 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
     app.include_router(pwa_router)   # web app manifest and service worker (home-screen install)
+    # Largest photo plus 4 MB of room for the rest of the recipe form.
+    app.add_middleware(BodySizeLimit, max_bytes=(settings.max_upload_mb + 4) * 1024 * 1024)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
@@ -66,6 +102,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
+        if settings.cookie_secure:
+            # Served over HTTPS (e.g. Tailscale Funnel): browsers should never fall back to http.
+            # Browsers ignore this header on plain http://localhost, so local use still works.
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         # Pages are private: don't let the back button show them after sign-out.
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Cache-Control"] = "no-store"
@@ -77,7 +117,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException):
-        message = exc.detail if exc.status_code in (403, 404) else "Something went wrong."
+        message = exc.detail if exc.status_code in (403, 404, 413) else "Something went wrong."
         return render(request, "error.html", {"status": exc.status_code, "message": message},
                       status_code=exc.status_code)
 

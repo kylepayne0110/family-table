@@ -32,6 +32,7 @@ from urllib.parse import urljoin, urlsplit
 
 ALLOWED_SCHEMES = {"http": 80, "https": 443}
 ALLOWED_PORTS = {80, 443}
+NAT64 = ipaddress.ip_network("64:ff9b::/96")
 MAX_REDIRECTS = 5
 CONNECT_TIMEOUT = 5.0   # seconds to open a connection
 READ_TIMEOUT = 10.0     # seconds of silence before giving up
@@ -66,9 +67,15 @@ def is_public_ip(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    # Unwrap IPv4 hidden inside IPv6 (e.g. ::ffff:127.0.0.1).
-    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
-        addr = addr.ipv4_mapped
+    # Unwrap IPv4 hidden inside IPv6: mapped (::ffff:127.0.0.1), 6to4 (2002:7f00:1::),
+    # and NAT64 (64:ff9b::7f00:1). Each embedded address must be public too.
+    if isinstance(addr, ipaddress.IPv6Address):
+        if addr.ipv4_mapped:
+            addr = addr.ipv4_mapped
+        elif addr.sixtofour:
+            addr = addr.sixtofour
+        elif addr in NAT64:
+            addr = ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
     # is_global excludes private, loopback, link-local (incl. 169.254.169.254 metadata),
     # shared/CGNAT, reserved, and unspecified ranges.
     return addr.is_global and not addr.is_multicast

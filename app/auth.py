@@ -83,24 +83,45 @@ def check_credentials(settings, username: str, password: str) -> bool:
 # ---- Login throttling ----
 
 class LoginLimiter:
-    """In-memory limit on failed logins per client address."""
+    """In-memory limit on failed logins, per client address and for the whole site.
 
-    def __init__(self, max_failures: int = 5, window_seconds: int = 15 * 60):
+    The per-address limit stops one guesser. The site-wide limit is a backstop for when
+    addresses can't be trusted (for example a public tunnel where every request seems to
+    come from 127.0.0.1, or a guesser rotating addresses): after that many failures from
+    anywhere, all logins pause until the window passes. Signed-in phones are unaffected.
+    """
+
+    def __init__(self, max_failures: int = 5, window_seconds: int = 15 * 60, site_max_failures: int = 30):
         self.max_failures = max_failures
+        self.site_max_failures = site_max_failures
         self.window = window_seconds
         self._failures: dict[str, list[float]] = {}
+        self._site: list[float] = []
 
     def _recent(self, key: str) -> list[float]:
         cutoff = time.monotonic() - self.window
         recent = [t for t in self._failures.get(key, []) if t > cutoff]
-        self._failures[key] = recent
+        if recent:
+            self._failures[key] = recent
+        else:
+            self._failures.pop(key, None)   # don't keep growing with one-off addresses
         return recent
 
+    def _site_recent(self) -> list[float]:
+        cutoff = time.monotonic() - self.window
+        self._site = [t for t in self._site if t > cutoff]
+        return self._site
+
     def is_blocked(self, key: str) -> bool:
-        return len(self._recent(key)) >= self.max_failures
+        return len(self._recent(key)) >= self.max_failures or len(self._site_recent()) >= self.site_max_failures
 
     def record_failure(self, key: str) -> None:
-        self._recent(key).append(time.monotonic())
+        now = time.monotonic()
+        self._failures[key] = self._recent(key) + [now]
+        self._site_recent().append(now)
+        if len(self._failures) > 10_000:   # memory guard: forget the oldest addresses
+            for old in sorted(self._failures, key=lambda k: self._failures[k][-1])[:5_000]:
+                del self._failures[old]
 
     def reset(self, key: str) -> None:
         self._failures.pop(key, None)
