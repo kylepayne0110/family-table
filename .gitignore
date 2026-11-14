@@ -1,0 +1,24 @@
+# Python environment
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local database
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Uploaded family photos
+data/uploads/*
+
+# Editor and operating system files
+.vscode/
+.DS_Store
