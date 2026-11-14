@@ -10,6 +10,7 @@ Our family's digital recipe box: one private place to save every meal we know ho
 - Recipe page with prep/cook/servings/last-made strip, a large photo, an ingredient checklist with a live "2 of 10 ready" counter, numbered steps, and a **We made it today** button
 - **Notes from the kitchen** on index cards, signed by name (`~ Mom, Oct 2025`)
 - Add/edit/delete recipes with photo upload, adjustable ingredient and step rows, and server-side validation
+- **Import from a website**: paste a recipe link, and the Add Recipe form fills in the name, description, times, servings, ingredients, steps, and photo for you to review before saving. Imported recipes link back to the **Original recipe**.
 - Responsive down to 320px wide phones
 
 ## Technology
@@ -21,6 +22,7 @@ Our family's digital recipe box: one private place to save every meal we know ho
 | Frontend | HTML, CSS, vanilla JavaScript (no build step) |
 | Database | SQLite via Python's built-in `sqlite3` |
 | Photos | Pillow (validate, fix rotation, resize, save as WebP) |
+| Recipe import | recipe-scrapers + BeautifulSoup (parsing only); SSRF-safe downloader built on the standard library |
 | Auth | scrypt password hash (Python standard library), server-side sessions in SQLite, CSRF tokens |
 | Tests | pytest + FastAPI `TestClient` |
 
@@ -36,6 +38,8 @@ family-table/
 │   ├── routes.py        # All page routes and form handlers
 │   ├── auth.py          # Password hashing, sessions, CSRF, login throttling
 │   ├── images.py        # Photo validation and processing
+│   ├── recipe_import.py # Import from a website: extract recipe data, map to the form
+│   ├── safe_fetch.py    # Safe downloads from user-supplied URLs (SSRF protection)
 │   ├── setup_login.py   # CLI: set the shared username/password
 │   └── seed.py          # CLI: optional sample recipes (development only)
 ├── templates/           # Jinja2 pages (+ _macros.html for shared pieces)
@@ -43,7 +47,8 @@ family-table/
 ├── tests/               # pytest suite
 ├── data/                # ← your family's data (git-ignored)
 │   ├── family_table.db  #   created automatically on first start
-│   └── uploads/         #   processed recipe photos
+│   ├── uploads/         #   processed recipe photos
+│   └── import-tmp/      #   photos from imports not saved yet (auto-cleaned)
 ├── requirements.txt     # runtime packages
 ├── requirements-dev.txt # runtime + test packages
 ├── .env.example         # settings template
@@ -92,6 +97,26 @@ python -m pytest
 ```
 
 Every test uses its own temporary database and upload folder, so tests never touch `data/`.
+
+## Importing recipes from websites
+
+On **Add recipe**, paste a link into **Import from a website** and click **Import recipe**. Family Table downloads the page, reads its recipe data, and opens the normal Add Recipe form pre-filled. Nothing is saved until you click **Save recipe**, so you can fix anything first.
+
+How it works:
+
+1. **Download** (`app/safe_fetch.py`): one request, with redirects followed manually (at most 5). Pages are capped at 5 MB and photos at `MAX_UPLOAD_MB`. A request gets 5 s to connect, 10 s of silence, and 20 s in total.
+2. **Extract** (`app/recipe_import.py`): `recipe-scrapers` reads site-specific and schema.org recipe data from the downloaded HTML. It never downloads anything itself. A small built-in JSON-LD reader fills any gaps and keeps section/step titles (`@graph`, `HowToSection`, `HowToStep`). Extractors are a simple list, so another one (such as an optional LLM fallback) could be added later.
+3. **Map to the form**: ingredient lines are split into amount and name (`2 cups (240g)` / `flour`), times and servings are filled only when the page states them, and notes explain anything left blank. Nothing is invented.
+4. **Photo**: the recipe's own image (from its structured data) is downloaded, validated, and resized by the same Pillow pipeline as uploads. It waits in `data/import-tmp/` and moves into `data/uploads/` only when you save. Unsaved import photos are deleted after 6 hours.
+
+Security: only `http`/`https` on ports 80 and 443. Every resolved address must be public: loopback, private, link-local (including cloud metadata `169.254.169.254`), CGNAT, multicast and reserved ranges are refused, as are IPv4-mapped IPv6 forms. Each redirect hop is checked again, and connections go to the exact IP that was validated, which defeats DNS rebinding. HTTPS certificates are still verified against the real hostname. No JavaScript from the page is run. The import endpoint requires sign-in and a CSRF token.
+
+Limitations:
+
+- Sites that block automated requests (for example with a 403 error or a CAPTCHA), require a login, or are paywalled can't be imported, and Family Table doesn't try to get around that. Some sites also rate-limit repeated requests.
+- Pages that build the recipe with JavaScript and have no structured data in the HTML won't be found.
+- The category isn't guessed (except obvious soups), so pick one before saving.
+- Ingredient splitting covers common formats. Unusual lines keep the whole text in the ingredient name.
 
 ## Settings (`.env`)
 
