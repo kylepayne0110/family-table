@@ -1186,6 +1186,7 @@ code {
 .error-card__title { font-size: 28px; }
 .error-card__body { padding: 24px 32px 32px; }
 .error-card__body p { margin-bottom: 24px; line-height: var(--line); }
+.error-card__actions { display: flex; flex-wrap: wrap; gap: 12px; }
 
 /* ==== Responsive ==== */
 @media (max-width: 960px) {
@@ -1864,3 +1865,56 @@ code {
 @media (prefers-reduced-motion: reduce) {
     .shop-item, .pick-tile, .day-card { transition: none; }
 }
+
+/* ==== Installed app (iPhone home screen) and touch screens ==== */
+
+/* The page may run edge to edge (viewport-fit=cover): keep content clear of the notch,
+   Dynamic Island, rounded corners, and home indicator. All insets are 0 on desktops. */
+body {
+    min-height: 100dvh;   /* the real visible height on phones (100vh is too tall on iOS) */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.login { min-height: 100dvh; }
+
+/* Keep the three sections one tap away while scrolling long lists on a phone. */
+@media (max-width: 820px) {
+    .app-nav {
+        position: sticky;
+        top: env(safe-area-inset-top);
+        z-index: 20;
+    }
+    /* Jump links (e.g. back to a day in the planner) land below the sticky bar. */
+    html { scroll-padding-top: 72px; }
+}
+
+/* iPhone Safari zooms the whole page into any text box under 16px. Keep them at 16px
+   on touch screens. !important overrides the more specific per-form sizes above. */
+@media (pointer: coarse) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+    select,
+    textarea { font-size: 16px !important; }
+
+    .shop-item__src, .shop-item__note { font-size: 14.5px; }
+    .shop-section__hint, .shop-progress__of { font-size: 15px; }
+}
+
+/* Tapping anywhere on a grocery's name checks it off (shopping.js), not just the box. */
+.tap-rows [data-section="need"] .shop-item__body { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+
+/* Offline screen (static/offline.html, shown by the service worker). */
+.offline-body { justify-content: center; }
+.offline-card {
+    width: min(100% - 2 * var(--gutter), 440px);
+    margin: auto;
+    padding: 36px 28px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    text-align: center;
+}
+.offline-card__icon { display: block; margin: 0 auto 18px; border-radius: 16px; }
+.offline-card__title { margin-bottom: 12px; font-size: 30px; }
+.offline-card p { margin-bottom: 12px; }
+.offline-card__hint { font-size: 15px; color: var(--muted); }
+.offline-card .btn { margin-top: 10px; }

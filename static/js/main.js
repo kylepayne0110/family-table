@@ -164,6 +164,36 @@ function setupFilters() {
   });
 }
 
+// True when opened from the home-screen icon (no Safari address bar, back, or reload buttons).
+function isInstalledApp() {
+  return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+}
+
+// The installed iPhone app keeps its own sign-in, separate from Safari: suggest staying signed in.
+function setupInstalledApp() {
+  if (!isInstalledApp()) return;
+  const remember = document.querySelector('.login-card input[name="remember"]');
+  if (remember) remember.checked = true;
+}
+
+// Error pages offer an in-page Back button (the installed app has no browser back button).
+function setupBackButtons() {
+  document.querySelectorAll("[data-history-back]").forEach((button) => {
+    if (window.history.length < 2) return;
+    button.hidden = false;
+    button.addEventListener("click", () => window.history.back());
+  });
+}
+
+// The service worker only shows a friendly screen when the server can't be reached.
+// Browsers allow it on HTTPS sites and on localhost.
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => { /* the app works without it */ });
+  });
+}
+
 // Move focus to a form's error summary so screen readers announce it.
 function focusErrors() {
   const summary = document.querySelector("[data-focus-on-load]");
@@ -180,4 +210,8 @@ document.addEventListener("DOMContentLoaded", () => {
   setupImportForm();
   setupFilters();
   focusErrors();
+  setupInstalledApp();
+  setupBackButtons();
 });
+
+registerServiceWorker();

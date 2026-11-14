@@ -3,10 +3,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {#- viewport-fit=cover lets the page use the whole iPhone screen; CSS keeps content inside the safe areas. #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#F4EDE1">
     <meta name="robots" content="noindex, nofollow">
+    {#- Installable app: manifest, plus the tags iPhone Safari reads for Add to Home Screen. #}
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Family Table">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="application-name" content="Family Table">
+    {#- Stop iOS turning quantities and dates into phone-number links. #}
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
 
     <title>{% block title %}Family Table{% endblock %}</title>
 
@@ -14,9 +24,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    <link rel="icon" href="{{ url_for('static', path='/favicon.svg') }}" type="image/svg+xml">
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/styles.css') }}">
-    <script src="{{ url_for('static', path='/js/main.js') }}" defer></script>
+    <link rel="icon" href="{{ static_url('favicon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ static_url('icons/icon-192.png') }}" type="image/png" sizes="192x192">
+    <link rel="apple-touch-icon" href="{{ static_url('icons/apple-touch-icon.png') }}">
+    <link rel="stylesheet" href="{{ static_url('css/styles.css') }}">
+    <script src="{{ static_url('js/main.js') }}" defer></script>
     {% block scripts %}{% endblock %}
 </head>
 

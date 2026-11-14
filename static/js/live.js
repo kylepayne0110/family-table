@@ -104,7 +104,7 @@ class LiveRegion {
     if (res.redirected) return this.signedOut();
     if (res.status === 403) {
       this.sending = false;
-      return this.say("This page expired. Refresh to keep going.", true);
+      return this.say("This page expired.", false, { label: "Reload", href: window.location.href });
     }
     if (res.status >= 500) return this.retryLater("Couldn't save that yet. Trying again…");
 
@@ -144,14 +144,22 @@ class LiveRegion {
   signedOut() {
     this.stopped = true;
     this.sending = false;
-    this.say("You've been signed out. Refresh the page to sign in again.", true);
+    this.say("You've been signed out.", false, { label: "Sign in again", href: "/login" });
   }
 
   // Small status line under the header; with `retry`, offers a Try now button.
-  say(message, retry = false) {
+  // `link` adds a button-style link, because the installed iPhone app has no reload button.
+  say(message, retry = false, link = null) {
     if (!this.status) return;
     this.status.hidden = !message;
     this.status.textContent = message;
+    if (link) {
+      const a = document.createElement("a");
+      a.className = "link-button link-button--accent";
+      a.href = link.href;
+      a.textContent = link.label;
+      this.status.append(" ", a);
+    }
     if (retry && this.queue.length) {
       const button = document.createElement("button");
       button.type = "button";

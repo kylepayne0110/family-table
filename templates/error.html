@@ -18,7 +18,10 @@
         </div>
         <div class="index-card__lines error-card__body">
             <p>{{ message }}</p>
-            <a class="btn btn-primary" href="/">Back to the recipes</a>
+            <div class="error-card__actions">
+                <button type="button" class="btn btn-outline" data-history-back hidden>Go back</button>
+                <a class="btn btn-primary" href="/">Back to the recipes</a>
+            </div>
         </div>
     </div>
 </section>

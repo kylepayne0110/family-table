@@ -33,6 +33,7 @@ from app import auth, meals
 from app.config import BASE_DIR, CATEGORIES
 from app.database import get_db
 from app.images import ImageError, adopt_photo, delete_photo, photo_path, process_photo
+from app.pwa import static_url
 from app.recipe_import import RecipeImportError, import_recipe
 
 
@@ -97,6 +98,7 @@ templates.env.filters.update(
     hostname=lambda url: (urlsplit(url).hostname or "").removeprefix("www."),
 )
 templates.env.globals["categories"] = CATEGORIES
+templates.env.globals["static_url"] = static_url   # versioned, root-relative static file links
 
 
 def home_url(q: str = "", category: str = "") -> str:

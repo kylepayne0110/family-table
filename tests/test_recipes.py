@@ -64,6 +64,7 @@ def test_ingredients_and_steps_keep_their_order(auth_client, settings):
 
     # And the page shows them in that order too.
     page = auth_client.get(f"/recipes/{recipe_id}").text
+    page = page[page.index("<body"):]   # the <head> mentions "apple" (iPhone home-screen tags)
     assert page.index("zucchini") < page.index("apple") < page.index("mango") < page.index("banana")
     assert page.index("first step") < page.index("second step") < page.index("third step")
 

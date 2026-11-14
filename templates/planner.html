@@ -6,8 +6,8 @@
 {% block header %}{% include "_app_header.html" %}{% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', path='/js/live.js') }}" defer></script>
-<script src="{{ url_for('static', path='/js/planner.js') }}" defer></script>
+<script src="{{ static_url('js/live.js') }}" defer></script>
+<script src="{{ static_url('js/planner.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}

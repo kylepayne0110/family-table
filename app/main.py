@@ -23,6 +23,7 @@ from app.config import BASE_DIR, Settings, load_settings
 from app.database import init_db
 from app.recipe_import import cleanup_temp_photos
 from app.plan_routes import router as plan_router
+from app.pwa import router as pwa_router
 from app.routes import render, router
 
 
@@ -56,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     app.include_router(router)
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
+    app.include_router(pwa_router)   # web app manifest and service worker (home-screen install)
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):

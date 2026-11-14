@@ -39,6 +39,17 @@ document.addEventListener("DOMContentLoaded", () => {
     live.send(form, { itemId: row ? row.dataset.item : null });
   });
 
+  // In the store, tapping the grocery's name checks it off too: a bigger target for one
+  // thumb. Recipe links inside the row still open the recipe.
+  el.classList.add("tap-rows");
+  el.addEventListener("click", (event) => {
+    const body = event.target.closest('[data-section="need"] .shop-item__body');
+    if (!body || event.target.closest("a, button, input, summary")) return;
+    if (window.getSelection && String(window.getSelection())) return;   // selecting text, not tapping
+    const check = body.closest("[data-item]")?.querySelector(".shop-item__check");
+    if (check && !check.closest("[hidden], .is-leaving")) check.requestSubmit();
+  });
+
   // Add an item: send it, clear the box, and keep the keyboard up for the next one.
   const addForm = document.querySelector("[data-add-item]");
   if (addForm) {
