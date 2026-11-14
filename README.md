@@ -15,6 +15,7 @@ Our family's digital recipe box: one private place to save every meal we know ho
 - **Shopping List**: one tap builds the week's grocery list, combining matching ingredients ("Ground beef 3 lbs, from Taco Bowls (1 lb) and Burgers (2 lbs)") and setting Kitchen Staples aside. At the store, tap an item once and it moves to Purchased. Changes show up on the other phone within a few seconds.
 - **Kitchen Staples**: the shared list of things you always have (salt, butter, olive oil...). They're left off Need to Buy, and you can add one back when you run out.
 - Responsive down to 320px wide phones
+- **Installable iPhone app** (Progressive Web App): Add to Home Screen in Safari for a Family Table icon that opens full screen, without Safari's address bar. Same server and same database as the desktop site.
 
 ## Technology
 
@@ -47,10 +48,16 @@ family-table/
 │   ├── ingredients.py   # Parse, normalize, and combine ingredient lines (no database)
 │   ├── shopping.py      # Shopping lists, list updates, item states, Kitchen Staples
 │   ├── plan_routes.py   # Pages/actions for the planner, shopping list, and staples
+│   ├── pwa.py           # Web app manifest, service worker route, versioned static links
 │   ├── setup_login.py   # CLI: set the shared username/password
 │   └── seed.py          # CLI: optional sample recipes (development only)
 ├── templates/           # Jinja2 pages (+ _macros.html for shared pieces)
 ├── static/              # styles.css, main.js (+ live.js, planner.js, shopping.js), favicon
+│   ├── icons/           #   app icons (home screen, maskable, apple-touch-icon)
+│   ├── sw.js            #   tiny service worker (offline notice only; never caches family data)
+│   └── offline.html     #   "Can't reach Family Table" screen
+├── tools/make_icons.py  # redraws the app icons with Pillow
+├── docs/                # iPhone install and testing checklist
 ├── tests/               # pytest suite
 ├── data/                # ← your family's data (git-ignored)
 │   ├── family_table.db  #   created automatically on first start
@@ -148,6 +155,22 @@ Updating a list never resets it. Items keep their id and their Purchased or Alre
 
 Sharing between phones: each open list asks the server "anything new?" every 5 seconds (8 on the planner), and stops while the tab is hidden. That check is a single tiny query, and the list is only re-sent when its version number has changed. Every change carries the item's revision number, so a phone showing an old list can't overwrite a newer change. It gets the latest list instead. Taps are saved in order and retried automatically if the connection drops. There's no Redis, WebSocket server, or background worker.
 
+## iPhone app (Progressive Web App)
+
+Family Table can be added to an iPhone home screen and then behaves like an app: its own icon, full screen with no Safari address bar, and a warm status bar. It is the same website on the same server, so both phones and the desktop always see the same recipes, plans, and list. Nothing comes from the App Store and nothing costs money.
+
+What's included:
+
+- `/manifest.webmanifest`: name, icons, `standalone` display, theme colours, start page `/`, and shortcuts to the Shopping List and Meal Planner.
+- Apple tags in `base.html`: `apple-touch-icon`, home-screen title, status bar style, `viewport-fit=cover` (with safe-area padding for the notch, Dynamic Island, and home indicator), and no automatic phone-number links.
+- `/sw.js`: a deliberately tiny service worker. Pages, photos, and list updates always come from the server. Its only job is to show a friendly **Can't reach Family Table / Try again** screen instead of a blank page when the server can't be reached. It stores only four public files (that screen, the stylesheet, and two icons), never recipes, lists, or signed-in pages. There is no offline editing.
+- Static files are linked with a content hash (`styles.css?v=…`), so an installed app picks up new CSS/JS straight away after an update.
+- Phone touches: text boxes are 16px on touch screens (stops iPhone Safari zooming in), the section bar stays at the top while scrolling, tapping a grocery's name checks it off (not just the box), and messages like "You've been signed out" come with a button, because the installed app has no reload button.
+
+Install (once the permanent HTTPS address exists): open it in **Safari**, sign in, tap **Share** → **Add to Home Screen** → **Add**. Then open Family Table from the icon and sign in **once more inside the app** with **Keep me signed in** ticked. iPhone keeps home-screen apps' sign-ins separate from Safari's. The full check list is in [`docs/iphone-testing.md`](docs/iphone-testing.md).
+
+Needs HTTPS: the service worker (browsers allow it only on HTTPS or `localhost`), `COOKIE_SECURE=true`, and a reliable installed-app experience. Install from the final address. An installed app is tied to the address it was added from, so changing the hostname later means removing the icon and adding it again. To redraw the icons: `python tools/make_icons.py`.
+
 ## Settings (`.env`)
 
 | Setting | Default | Meaning |
@@ -182,6 +205,7 @@ To back up or move to another computer, copy both. Stop the server first, or use
 
 - The app is light enough for the Z83-W mini PC (2 GB RAM): no background workers, and a single SQLite file.
 - On the server, install with `pip install -r requirements.txt` and run Uvicorn without `--reload` (for example under a systemd service), bound to `127.0.0.1` behind a reverse proxy that provides HTTPS.
-- Once served over HTTPS, set `COOKIE_SECURE=true`.
+- Once served over HTTPS, set `COOKIE_SECURE=true`. Then add the app to each iPhone from the final HTTPS address (see `docs/iphone-testing.md`).
+- Page links are root-relative, so they keep working unchanged behind an HTTPS proxy.
 - Behind a reverse proxy, configure Uvicorn's `--proxy-headers`/`--forwarded-allow-ips` so login throttling sees real client addresses. Also set an upload size limit at the proxy (e.g. `client_max_body_size 15m` in Nginx).
 - Move `data/` and `.env` across to bring every recipe and photo along.
