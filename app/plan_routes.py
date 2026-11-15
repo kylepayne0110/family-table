@@ -188,7 +188,7 @@ async def plan_generate(request: Request, week: str,
             and shopping.list_status(conn, wk) == "none":
         return redirect(f"/plan?week={wk.isoformat()}&msg=empty")
     summary = shopping.generate_list(conn, wk)
-    counts = "&".join(f"{k}={summary[k]}" for k in ("added", "staples", "changed", "stale"))
+    counts = "&".join(f"{k}={summary[k]}" for k in ("added", "staples", "changed", "removed"))
     return redirect(f"/shopping?week={wk.isoformat()}&built={'new' if summary['first'] else 'update'}&{counts}")
 
 
@@ -209,6 +209,8 @@ def _summary_message(built: str, counts: dict[str, int]) -> str:
         parts.append(f"{counts['staples']} kitchen {'staple' if counts['staples'] == 1 else 'staples'} set aside")
     if counts["changed"]:
         parts.append(f"{counts['changed']} updated")
+    if counts["removed"]:
+        parts.append(f"{counts['removed']} no longer needed")
     if built == "new":
         return "Shopping list ready" + (f": {', '.join(parts)}." if parts else ".")
     return "Shopping list updated" + (f": {', '.join(parts)}." if parts else ". Nothing changed.")
@@ -216,11 +218,11 @@ def _summary_message(built: str, counts: dict[str, int]) -> str:
 
 @router.get("/shopping")
 def shopping_page(request: Request, week: str = "", built: str = "", added: int = 0, staples: int = 0,
-                  changed: int = 0, stale: int = 0,
+                  changed: int = 0, removed: int = 0,
                   session: auth.Session = Depends(auth.require_session),
                   conn: sqlite3.Connection = Depends(get_db)):
     wk = _week(week)
-    counts = {"added": added, "staples": staples, "changed": changed}
+    counts = {"added": added, "staples": staples, "changed": changed, "removed": removed}
     return render(request, "shopping.html", {
         **_list_context(conn, wk, session), "nav_active": "shopping",
         "message": _summary_message(built, counts),
@@ -301,17 +303,14 @@ async def item_action(request: Request, week: str, item_id: int, action: str,
     return _list_done(request, conn, wk, session, rev=new_rev)
 
 
-@router.post("/shopping/{week}/stale")
-async def stale_items(request: Request, week: str,
-                      session: auth.Session = Depends(auth.require_session),
-                      conn: sqlite3.Connection = Depends(get_db)):
-    """Confirm items that are no longer in the meal plan: remove them or keep them."""
-    form = await auth.read_form_with_csrf(request, session.csrf_token)
+@router.post("/shopping/{week}/clear-purchased")
+async def clear_purchased(request: Request, week: str,
+                          session: auth.Session = Depends(auth.require_session),
+                          conn: sqlite3.Connection = Depends(get_db)):
+    """Clear Purchased: hide everything already bought this week."""
+    await auth.read_form_with_csrf(request, session.csrf_token)
     wk = _week(week)
-    choice = form.get("choice")
-    if choice not in ("remove", "keep"):
-        return _list_done(request, conn, wk, session, "Choose Remove or Keep.", 422)
-    shopping.resolve_stale(conn, wk, keep=choice == "keep")
+    shopping.clear_purchased(conn, wk)
     return _list_done(request, conn, wk, session)
 
 

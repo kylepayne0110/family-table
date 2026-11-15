@@ -20,7 +20,7 @@ GET_PAGES = [
 POSTS = [
     f"/plan/{W}/day/0", f"/plan/{W}/day/0/clear", f"/plan/{W}/move", f"/plan/{W}/shopping-list",
     f"/shopping/{W}/items", f"/shopping/{W}/items/1/status", f"/shopping/{W}/items/1/edit",
-    f"/shopping/{W}/items/1/delete", f"/shopping/{W}/items/1/staple", f"/shopping/{W}/stale",
+    f"/shopping/{W}/items/1/delete", f"/shopping/{W}/items/1/staple", f"/shopping/{W}/clear-purchased",
     "/staples", "/staples/1/edit", "/staples/1/delete", "/staples/1/list",
 ]
 
@@ -88,7 +88,6 @@ def test_items_from_another_week_cannot_be_changed(auth_client, settings):
 
 
 def test_bad_values_are_rejected(auth_client):
-    assert post(auth_client, f"/shopping/{W}/stale", {"choice": "everything"}, fetch=True).status_code == 422
     assert post(auth_client, f"/shopping/{W}/items/1/explode", {}).status_code == 404
     assert post(auth_client, "/staples/1/explode", {"week": W}).status_code == 404
     assert post(auth_client, "/shopping/2026-11-11/items", {"name": "Milk"}).status_code == 404   # not a Monday
@@ -129,7 +128,7 @@ def test_planner_and_list_never_change_recipe_data(auth_client, settings):
     post(auth_client, f"/shopping/{W}/items/{it['id']}/status", {"status": "bought", "rev": it["rev"]})
     post(auth_client, f"/plan/{W}/day/1/clear")
     post(auth_client, f"/plan/{W}/shopping-list")
-    post(auth_client, f"/shopping/{W}/stale", {"choice": "remove"})
+    post(auth_client, f"/shopping/{W}/clear-purchased")
 
     assert snapshot(settings) == before
     assert auth_client.get(f"/photos/{photo}").status_code == 200

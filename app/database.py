@@ -98,11 +98,13 @@ CREATE TABLE IF NOT EXISTS shopping_items (
     manual_qty  TEXT    NOT NULL DEFAULT '',   -- quantity typed with a manual item
     status      TEXT    NOT NULL DEFAULT 'need'
                 CHECK (status IN ('need', 'bought', 'have', 'staple')),
-    stale       INTEGER NOT NULL DEFAULT 0,    -- 1 = no longer in the meal plan (awaiting confirmation)
+    stale       INTEGER NOT NULL DEFAULT 0,    -- legacy: 1 = flagged by an older version; removed on the next Update
     change_note TEXT    NOT NULL DEFAULT '',   -- e.g. "Was 1 lb, now 3 lbs"
     rev         INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    cleared     INTEGER NOT NULL DEFAULT 0,    -- 1 = purchased, then hidden with Clear Purchased
+    bought_totals TEXT  NOT NULL DEFAULT '',   -- totals_json when it was purchased ('' = not recorded)
     UNIQUE (week_start, item_key)
 );
 
@@ -143,6 +145,8 @@ CREATE INDEX IF NOT EXISTS idx_notes_recipe ON notes(recipe_id, created_at);
 # Older databases get them via ALTER TABLE; existing rows are kept.
 ADDED_COLUMNS = [
     ("recipes", "source_url", "TEXT NOT NULL DEFAULT ''"),
+    ("shopping_items", "cleared", "INTEGER NOT NULL DEFAULT 0"),
+    ("shopping_items", "bought_totals", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 

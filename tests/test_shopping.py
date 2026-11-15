@@ -300,35 +300,18 @@ def test_update_after_swapping_a_meal(auth_client, settings, week_of_tacos):
     response = generate(auth_client)
     assert "built=update" in response.headers["location"]
 
-    # New ingredients arrive; ones only Taco Bowls needed wait for confirmation.
+    # New ingredients arrive; ones only Taco Bowls needed are removed straight away.
     assert item(settings, "Chicken breasts")["status"] == "need"
-    stale = sorted(i["name"] for i in all_items(settings) if i["stale"])
-    assert stale == ["Corn tortillas", "Tomatoes"]
-    page = auth_client.get(f"/shopping?week={W}").text
-    assert "2 items are no longer in this week's meals" in page
-    assert "Corn tortillas, Tomatoes" in page
+    names = {i["name"] for i in all_items(settings)}
+    assert "Tomatoes" not in names and "Corn tortillas" not in names
+    page = auth_client.get(response.headers["location"]).text
+    assert "3 no longer needed" in page and "Tomatoes" not in page   # and Butter, an excluded staple
 
     # Kept: purchase state, hand-added item, stable ids. Quantity updated (only Burgers now).
     beef = item(settings, "Ground beef")
     assert beef["id"] == beef_id and beef["status"] == "bought" and beef["display_qty"] == "2 lbs"
     assert item(settings, "Paper towels")["status"] == "need"
     assert item(settings, "Onion")["display_qty"] == "2"   # Burgers + Chicken Parmesan
-
-    post(auth_client, f"/shopping/{W}/stale", {"choice": "remove"})
-    names = {i["name"] for i in all_items(settings)}
-    assert "Tomatoes" not in names and "Corn tortillas" not in names and "Paper towels" in names
-
-
-def test_keep_items_no_longer_needed(auth_client, settings, week_of_tacos):
-    post(auth_client, f"/plan/{W}/day/0/clear")
-    generate(auth_client)
-    post(auth_client, f"/shopping/{W}/stale", {"choice": "keep"})
-    tortillas = item(settings, "Corn tortillas")
-    assert tortillas["stale"] == 0 and tortillas["manual"] == 1 and tortillas["manual_qty"] == "8"
-    assert tortillas["sources"] == []
-    # Keeping them doesn't break a later update.
-    generate(auth_client)
-    assert item(settings, "Corn tortillas")["manual"] == 1
 
 
 def test_regenerating_an_unchanged_plan_changes_nothing(auth_client, settings, week_of_tacos):
@@ -359,6 +342,7 @@ def test_purchased_item_needing_less_stays_purchased(auth_client, settings, week
     generate(auth_client)
     beef = item(settings, "Ground beef")
     assert beef["status"] == "bought" and beef["change_note"] == "Was 3 lbs, now 1 lb"
+    assert beef["display_qty"] == "1 lb"
 
 
 def test_staple_overrides_survive_updates(auth_client, settings, week_of_tacos):

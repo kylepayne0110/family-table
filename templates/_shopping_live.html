@@ -30,7 +30,6 @@
     </p>
     {{ sources(item) }}
     {% if item.change_note %}<p class="shop-item__note">{{ item.change_note }}</p>{% endif %}
-    {% if item.stale %}<p class="shop-item__note">No longer in this week's meals</p>{% endif %}
 </div>
 {%- endmacro %}
 
@@ -41,25 +40,6 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-primary">{{ icon("basket", 18) }}Update Shopping List</button>
     </form>
-</div>
-{% endif %}
-
-{% if state.stale %}
-<div class="shop-banner shop-banner--stale">
-    <p class="shop-banner__title">{{ state.stale | length }} {{ "item is" if state.stale | length == 1 else "items are" }} no longer in this week's meals</p>
-    <p class="shop-banner__items">{{ state.stale | map(attribute="name") | join(", ") }}</p>
-    <div class="shop-banner__actions">
-        <form method="post" action="{{ base }}/stale" data-list-form>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="choice" value="remove">
-            <button type="submit" class="btn btn-primary btn-sm">Remove {{ "it" if state.stale | length == 1 else "them" }}</button>
-        </form>
-        <form method="post" action="{{ base }}/stale" data-list-form>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input type="hidden" name="choice" value="keep">
-            <button type="submit" class="btn btn-outline btn-sm">Keep on the list</button>
-        </form>
-    </div>
 </div>
 {% endif %}
 
@@ -78,7 +58,7 @@
 
 <ul class="shop-list" data-section="need" aria-label="Need to buy">
     {% for item in s.need %}
-    <li class="shop-item{% if item.stale %} is-stale{% endif %}" data-item="{{ item.id }}">
+    <li class="shop-item" data-item="{{ item.id }}">
         <form class="shop-item__check" method="post" action="{{ base }}/items/{{ item.id }}/status" data-list-form data-leaves="need">
             {{ hidden(item, "bought") }}
             <button type="submit" class="check" role="checkbox" aria-checked="false" aria-label="{{ item.name }}: mark purchased">
@@ -162,7 +142,13 @@
 {% if s.bought %}
 <details class="shop-section" data-keep-open="bought">
     <summary class="shop-section__toggle">Purchased <span>({{ s.bought | length }})</span></summary>
-    <p class="shop-section__hint">Tapped one by mistake? Tap it again to put it back.</p>
+    <div class="shop-section__bar">
+        <p class="shop-section__hint">Tapped one by mistake? Tap it again to put it back.</p>
+        <form method="post" action="{{ base }}/clear-purchased" data-list-form data-clears>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline btn-sm">Clear purchased</button>
+        </form>
+    </div>
     <ul class="shop-list shop-list--done">
         {% for item in s.bought %}
         <li class="shop-item is-bought" data-item="{{ item.id }}">

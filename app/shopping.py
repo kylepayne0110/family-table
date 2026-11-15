@@ -59,22 +59,24 @@ def list_state(conn: sqlite3.Connection, week: date) -> dict:
 
     sections: dict[str, list] = {status: [] for status in STATUSES}
     for item in items:
+        if item["cleared"]:
+            continue  # cleared purchases are remembered but never shown
         item["sources"] = sources.get(item["id"], [])
         item["display_qty"] = " + ".join(q for q in (item["quantity"], item["manual_qty"]) if q)
         sections[item["status"]].append(item)
 
-    total = len(items)
     has_list = meta is not None and meta["list_signature"] is not None
+    # Items flagged by an older version of the app are cleaned up by the next Update.
+    legacy_stale = any(i["stale"] for i in items)
     return {
         "sections": sections,
-        "stale": [i for i in items if i["stale"]],
         "need_count": len(sections["need"]),
         "bought_count": len(sections["bought"]),
         "shopping_total": len(sections["need"]) + len(sections["bought"]),
-        "total": total,
+        "total": len(items),   # includes cleared items, so a fully shopped list isn't "empty"
         "has_list": has_list,
         "version": meta["list_version"] if meta else 0,
-        "out_of_date": has_list and meta["list_signature"] != plan_signature(conn, week),
+        "out_of_date": has_list and (legacy_stale or meta["list_signature"] != plan_signature(conn, week)),
     }
 
 
@@ -111,12 +113,13 @@ def _source_rows(conn: sqlite3.Connection, item_id: int) -> list[tuple]:
 
 
 def generate_list(conn: sqlite3.Connection, week: date) -> dict:
-    """Build or update a week's list from its meal plan without losing anyone's progress.
+    """Build or update a week's list so it matches the meal plan, without losing anyone's progress.
 
     - New ingredients are added (staples go straight to the Kitchen Staples section).
-    - Existing items keep their id and status; quantities and sources are refreshed.
-      If a purchased item now needs more, it goes back to Need to Buy with a note.
-    - Ingredients no longer in the plan are flagged for the family to confirm, never deleted.
+    - Existing items keep their id and status (including cleared purchases); quantities and
+      sources are refreshed. If a purchased item now needs more than was bought, it goes
+      back to Need to Buy with a note.
+    - Ingredients no planned recipe needs any more are removed.
     - Hand-added items are always kept. Running it twice changes nothing the second time.
     """
     w = week.isoformat()
@@ -133,7 +136,7 @@ def generate_list(conn: sqlite3.Connection, week: date) -> dict:
                FROM shopping_items i WHERE i.week_start = ?""",
             (w,),
         )}
-        summary = {"added": 0, "staples": 0, "changed": 0, "stale": 0, "first": bool(first_time)}
+        summary = {"added": 0, "staples": 0, "changed": 0, "removed": 0, "first": bool(first_time)}
 
         for key, item in desired.items():
             totals = json.dumps(item.totals, sort_keys=True)
@@ -150,19 +153,22 @@ def generate_list(conn: sqlite3.Connection, week: date) -> dict:
                 continue
 
             new_sources = [(s.recipe_id, s.recipe_name, s.amount, s.times) for s in item.sources]
-            status, note = row["status"], row["change_note"]
+            status, note, cleared = row["status"], row["change_note"], row["cleared"]
             quantity_changed = row["totals_json"] != totals or row["quantity"] != item.quantity
             if quantity_changed and row["source_count"]:
                 if row["quantity"]:
                     note = f"Was {row['quantity']}, now {item.quantity or 'some'}"
-                if status == "bought" and needs_more(json.loads(row["totals_json"]), item.totals):
-                    # Don't assume what was bought covers the bigger amount.
-                    status, note = "need", f"Need more: was {row['quantity'] or 'some'}, now {item.quantity}"
+                # Compare with what was actually bought, so "less, then back to the same" isn't bought twice.
+                bought = json.loads(row["bought_totals"] or row["totals_json"])
+                if status == "bought" and needs_more(bought, item.totals):
+                    # Don't assume what was bought covers the bigger amount (even if it was cleared).
+                    status, cleared = "need", 0
+                    note = f"Need more: was {row['quantity'] or 'some'}, now {item.quantity}"
             if quantity_changed or row["stale"] or new_sources != _source_rows(conn, row["id"]):
                 conn.execute(
                     """UPDATE shopping_items SET quantity = ?, totals_json = ?, status = ?, change_note = ?,
-                           stale = 0, rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
-                    (item.quantity, totals, status, note, row["id"]),
+                           cleared = ?, stale = 0, rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
+                    (item.quantity, totals, status, note, cleared, row["id"]),
                 )
                 _replace_sources(conn, row["id"], item.sources)
                 summary["changed"] += 1
@@ -179,48 +185,19 @@ def generate_list(conn: sqlite3.Connection, week: date) -> dict:
                     (row["id"],),
                 )
                 summary["changed"] += 1
-            elif row["status"] == "staple":
-                # An excluded staple nobody put on the list: nothing to lose, so it just goes.
+            else:
+                # Only a recipe needed it, and no planned recipe does now: it leaves the list,
+                # whatever its section (its sources go with it via ON DELETE CASCADE).
                 conn.execute("DELETE FROM shopping_items WHERE id = ?", (row["id"],))
-                summary["changed"] += 1
-            elif not row["stale"]:
-                conn.execute(
-                    "UPDATE shopping_items SET stale = 1, rev = rev + 1, updated_at = datetime('now') WHERE id = ?",
-                    (row["id"],),
-                )
-                summary["stale"] += 1
+                summary["removed"] += 1
 
         conn.execute(
             "UPDATE week_plans SET list_signature = ?, list_built_at = datetime('now') WHERE week_start = ?",
             (plan_signature(conn, week), w),
         )
-        if first_time or any(summary[k] for k in ("added", "staples", "changed", "stale")):
+        if first_time or any(summary[k] for k in ("added", "staples", "changed", "removed")):
             _bump_list(conn, week)
     return summary
-
-
-def resolve_stale(conn: sqlite3.Connection, week: date, keep: bool) -> int:
-    """Confirm what happens to items no longer in the plan: remove them, or keep them as hand-added."""
-    w = week.isoformat()
-    with write_transaction(conn):
-        ids = [r[0] for r in conn.execute("SELECT id FROM shopping_items WHERE week_start = ? AND stale = 1", (w,))]
-        if not ids:
-            return 0
-        marks = ",".join("?" * len(ids))
-        if keep:
-            conn.execute(f"DELETE FROM shopping_item_sources WHERE item_id IN ({marks})", ids)
-            conn.execute(
-                f"""UPDATE shopping_items SET stale = 0, manual = 1,
-                        manual_qty = CASE WHEN manual_qty = '' THEN substr(quantity, 1, {MAX_QTY}) ELSE manual_qty END,
-                        quantity = '', totals_json = '{{}}', change_note = '', rev = rev + 1,
-                        updated_at = datetime('now')
-                    WHERE id IN ({marks})""",
-                ids,
-            )
-        else:
-            conn.execute(f"DELETE FROM shopping_items WHERE id IN ({marks})", ids)
-        _bump_list(conn, week)
-    return len(ids)
 
 
 # ---- Changing items ----
@@ -251,13 +228,34 @@ def set_status(conn: sqlite3.Connection, week: date, item_id: int, status: str, 
         if item["status"] == status:
             return item["rev"]  # already done (perhaps by the other phone): nothing to do
         _check_rev(item, rev)
+        # Moving an excluded staple onto the list is a deliberate choice, so it counts as
+        # added by hand and stays even if the recipe that needed it is later unplanned.
+        manual = 1 if item["status"] == "staple" else item["manual"]
         conn.execute(
-            """UPDATE shopping_items SET status = ?, change_note = '', rev = rev + 1,
-                   updated_at = datetime('now') WHERE id = ?""",
-            (status, item_id),
+            """UPDATE shopping_items SET status = ?, manual = ?, change_note = '', rev = rev + 1,
+                   updated_at = datetime('now'), bought_totals = CASE WHEN ? = 'bought' THEN totals_json ELSE '' END
+               WHERE id = ?""",
+            (status, manual, status, item_id),
         )
         _bump_list(conn, week)
     return item["rev"] + 1
+
+
+def clear_purchased(conn: sqlite3.Connection, week: date) -> int:
+    """Clear Purchased: hide every purchased item. Returns how many were cleared.
+
+    The rows stay (marked cleared) so an unchanged Update knows they were already bought
+    and doesn't put them back on the list. Adding one again by hand brings it back.
+    """
+    with write_transaction(conn):
+        count = conn.execute(
+            """UPDATE shopping_items SET cleared = 1, change_note = '', rev = rev + 1, updated_at = datetime('now')
+               WHERE week_start = ? AND status = 'bought' AND cleared = 0""",
+            (week.isoformat(),),
+        ).rowcount
+        if count:
+            _bump_list(conn, week)
+    return count
 
 
 def _clean_text(value: str, limit: int) -> str:
@@ -265,7 +263,7 @@ def _clean_text(value: str, limit: int) -> str:
 
 
 def add_item(conn: sqlite3.Connection, week: date, name: str, quantity: str = "") -> int:
-    """Add a grocery by hand. If it's already on the list, bring it back to Need to Buy instead."""
+    """Add a grocery by hand. If it's already on the list (even cleared), bring it back to Need to Buy."""
     name, quantity = _clean_text(name, MAX_NAME), _clean_text(quantity, MAX_QTY)
     key = name_key(name)
     if not key:
@@ -277,7 +275,7 @@ def add_item(conn: sqlite3.Connection, week: date, name: str, quantity: str = ""
                            (w, key)).fetchone()
         if row:
             conn.execute(
-                """UPDATE shopping_items SET manual = 1, manual_qty = ?, status = 'need', stale = 0,
+                """UPDATE shopping_items SET manual = 1, manual_qty = ?, status = 'need', stale = 0, cleared = 0,
                        rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
                 (quantity or row["manual_qty"], row["id"]),
             )
@@ -395,7 +393,7 @@ def add_staple_to_list(conn: sqlite3.Connection, week: date, staple_id: int) -> 
             if row["status"] == "need":
                 return item_id  # already on the list; never add a duplicate
             conn.execute(
-                """UPDATE shopping_items SET status = 'need', stale = 0, rev = rev + 1,
+                """UPDATE shopping_items SET status = 'need', manual = 1, stale = 0, cleared = 0, rev = rev + 1,
                        updated_at = datetime('now') WHERE id = ?""",
                 (item_id,),
             )

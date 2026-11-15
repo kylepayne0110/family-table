@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
       setTimeout(() => { row.hidden = true; }, 180);
       if (form.dataset.leaves === "need") adjustNeedCount(-1);
     }
+    if (form.hasAttribute("data-clears")) form.closest("details").hidden = true;   // Clear purchased
     live.send(form, { itemId: row ? row.dataset.item : null });
   });
 
