@@ -7,6 +7,9 @@ from collections.abc import Iterator
 # contextmanager builds the write_transaction helper.
 from contextlib import contextmanager
 
+# fcntl locks the data folder so only one server uses it at a time (Linux/WSL and Docker).
+import fcntl
+
 # Path provides filesystem utilities.
 from pathlib import Path
 
@@ -196,6 +199,34 @@ def migrate(conn: sqlite3.Connection) -> None:
             [(name, name_key(name)) for name in DEFAULT_STAPLES],
         )
         conn.execute("INSERT INTO app_meta (key, value) VALUES ('staples_seeded', datetime('now'))")
+
+
+class DataInUse(RuntimeError):
+    """Another Family Table server is already using this data folder."""
+
+
+@contextmanager
+def data_folder_lock(data_dir: Path):
+    """Hold a lock on the data folder while the server runs.
+
+    Stops a second server (for example the Docker container and scripts/serve.sh, or a
+    copy on another port) from writing to the same family database at the same time.
+    The lock disappears automatically when the process stops, even after a crash.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    handle = open(data_dir / ".family-table.lock", "a")
+    try:
+        try:
+            # POSIX record lock: works across processes and containers sharing the folder.
+            fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise DataInUse(
+                f"Family Table is already running with the data folder {data_dir}. "
+                "Stop the other server first (Ctrl+C in its terminal, or: docker compose down)."
+            ) from None
+        yield
+    finally:
+        handle.close()
 
 
 @contextmanager

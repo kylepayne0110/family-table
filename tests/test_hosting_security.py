@@ -166,8 +166,14 @@ def test_https_mode_sends_hsts_and_secure_cookies(settings):
         response = c.get("/login")
         assert response.headers["strict-transport-security"] == "max-age=31536000"
         assert "Secure" in response.headers["set-cookie"]
-        session = login(c, remember=True).headers["set-cookie"]
-        assert all(flag in session for flag in ("Secure", "HttpOnly", "SameSite=lax"))
+        response = login(c, remember=True)
+        assert all(flag in response.headers["set-cookie"] for flag in ("Secure", "HttpOnly", "SameSite=lax"))
+        # Every cookie the server sets or clears is HTTPS-only, including the removals.
+        for header in response.headers.get_list("set-cookie"):
+            assert "Secure" in header, header.split("=")[0]
+        csrf = c.get("/").text.split('name="csrf_token" value="')[1].split('"')[0]
+        for header in c.post("/logout", data={"csrf_token": csrf}).headers.get_list("set-cookie"):
+            assert "Secure" in header and "HttpOnly" in header, header.split("=")[0]
 
 
 def test_development_mode_has_no_hsts(client):

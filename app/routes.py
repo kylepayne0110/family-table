@@ -182,7 +182,9 @@ async def login(request: Request, conn: sqlite3.Connection = Depends(get_db)):
 
     response = redirect("/")
     auth.set_session_cookie(response, token, settings, remember)
-    response.delete_cookie(auth.LOGIN_CSRF_COOKIE, path="/login")
+    # Deleted with the same flags it was set with, so browsers accept the removal over HTTPS.
+    response.delete_cookie(auth.LOGIN_CSRF_COOKIE, path="/login", secure=settings.cookie_secure,
+                           httponly=True, samesite="lax")
     return response
 
 
@@ -192,7 +194,8 @@ async def logout(request: Request, session: auth.Session = Depends(auth.require_
     await auth.read_form_with_csrf(request, session.csrf_token)
     auth.delete_session(conn, session)
     response = redirect("/login")
-    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    response.delete_cookie(auth.SESSION_COOKIE, path="/", secure=request.app.state.settings.cookie_secure,
+                           httponly=True, samesite="lax")
     return response
 
 
