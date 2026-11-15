@@ -1,0 +1,61 @@
+# Family Table: one application container. SQLite is a file inside the mounted data
+# folder, so there is no separate database container.
+#
+#   Start:  docker compose up --build     (logs stay in this terminal)
+#   Stop:   Ctrl+C                         (then optionally: docker compose down)
+#
+# Tailscale Funnel on Windows keeps forwarding https://…ts.net to localhost:8000, which
+# Docker passes to the container.
+name: family-table
+
+services:
+  app:
+    build: .
+    image: family-table:local
+    container_name: family-table
+
+    # Login and settings come from the existing .env at run time; it is never copied into the image.
+    env_file: ${FAMILY_TABLE_ENV_FILE:-.env}
+    environment:
+      FAMILY_TABLE_DATA_DIR: /data   # overrides the folder in .env: inside the container it's always /data
+      COOKIE_SECURE: "true"          # phones connect over HTTPS (Tailscale Funnel)
+      # Every request reaches the container from the network gateway below (Docker's port
+      # forwarder, fed only by 127.0.0.1). Only it may say which address a visitor really
+      # has, so login throttling sees visitors, not Docker. Same rule as scripts/serve.sh.
+      FORWARDED_ALLOW_IPS: 10.89.42.1
+
+    # Only this computer can connect (127.0.0.1), never the home network.
+    ports:
+      - "127.0.0.1:${FAMILY_TABLE_PORT:-8000}:8000"
+
+    # The family's database and photos: the project's data/ folder (or FAMILY_TABLE_DATA for a copy).
+    # If the folder or its database is missing, the container refuses to start rather than
+    # quietly beginning an empty database (Docker Desktop ignores create_host_path: false,
+    # so the start script checks too).
+    volumes:
+      - type: bind
+        source: ${FAMILY_TABLE_DATA:-./data}
+        target: /data
+        bind:
+          create_host_path: false
+
+    # Small-attack-surface defaults: read-only code, no extra privileges.
+    read_only: true
+    tmpfs:
+      - /tmp   # temporary upload files while a photo is processed
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    init: true              # passes Ctrl+C / docker stop to Uvicorn promptly
+    stop_grace_period: 15s
+    restart: "no"           # never starts on its own (not with Docker Desktop, not with Windows)
+
+# A fixed, small private network, so the gateway address trusted above never changes.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.89.42.0/29
+          gateway: 10.89.42.1

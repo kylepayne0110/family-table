@@ -1,8 +1,8 @@
 # iPhone install and testing checklist
 
-Do this on both iPhones once Family Table runs on the permanent computer with an **HTTPS** address
-(for example a Tailscale `https://….ts.net` name). Before starting, set `COOKIE_SECURE=true` in that
-server's `.env` and restart it.
+Do this on both iPhones once Family Table runs with its **HTTPS** address (the Tailscale Funnel
+`https://….ts.net` name). Both `docker compose up --build` and `./scripts/serve.sh` already use
+HTTPS-only cookies, so nothing needs changing in `.env`.
 
 Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS versions, but Safari is the one tested here.
 
@@ -52,6 +52,8 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 - [ ] Phone B taps a grocery (the box **or** its name). It disappears from Need to Buy at once, and the count goes down.
 - [ ] Within about 5–10 seconds Phone A shows the same.
 - [ ] Open **Purchased**, tap the item, and it goes back to Need to Buy (undo).
+- [ ] Buy two items, open **Purchased**, tap **Clear purchased**. The section disappears on both phones, and Need to Buy is unchanged.
+- [ ] Remove a dinner in the Meal Planner. The list doesn't change until **Update Shopping List** is tapped. Then groceries only that dinner needed disappear, shared ones show the smaller amount, and hand-added items stay.
 - [ ] **⋯ → Already have it** puts it under **Already have**, separate from Purchased.
 - [ ] **Kitchen Staples** opens, and **Add to list** works.
 - [ ] Lock the phone for a minute, then unlock it. The list catches up right away.

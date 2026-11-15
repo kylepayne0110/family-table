@@ -57,7 +57,13 @@ family-table/
 │   ├── sw.js            #   tiny service worker (offline notice only; never caches family data)
 │   └── offline.html     #   "Can't reach Family Table" screen
 ├── tools/make_icons.py  # redraws the app icons with Pillow
-├── docs/                # iPhone install and testing checklist
+├── docs/                # Docker guide, iPhone install and testing checklist
+├── scripts/
+│   ├── serve.sh         # production server without Docker (Ctrl+C to stop)
+│   └── container-start.sh # what the Docker container runs (checks data/, starts Uvicorn)
+├── Dockerfile           # the one application image (no data or secrets inside)
+├── compose.yaml         # runs it: 127.0.0.1:8000, data/ mounted, settings from .env
+├── .dockerignore        # allow-list: only code, templates, and static files enter the image
 ├── tests/               # pytest suite
 ├── data/                # ← your family's data (git-ignored)
 │   ├── family_table.db  #   created automatically on first start
@@ -91,6 +97,15 @@ python -m app.setup_login
 Run `python -m app.setup_login` again any time to change the username or password. Restart the server afterward.
 
 ## Running
+
+For the family (phones and desktop), run the production server in **one** of two ways, both on http://127.0.0.1:8000 and both stopped with **Ctrl+C**:
+
+- **Docker** (recommended): `docker compose up --build`. See [`docs/docker.md`](docs/docker.md) for stopping, logs, where the data lives, Tailscale, and rebuilding.
+- **Without Docker**: `./scripts/serve.sh` (uses `.venv`).
+
+Tailscale Funnel on Windows (`tailscale funnel 8000`) gives the phones the HTTPS address. Only one server can use `data/` at a time: a second one refuses to start.
+
+For development (auto-reload, plain http cookies):
 
 ```bash
 source .venv/bin/activate
@@ -151,7 +166,14 @@ How combining works (`app/ingredients.py`, plain Python, no AI):
 - Quantities are added with exact fractions. Units convert only within a family (3 tsp = 1 tbsp, 4 tbsp = 1/4 cup, 16 oz = 1 lb). Volume and weight are never mixed. Ranges ("2-3 cups") and anything unclear are kept exactly as written, and nothing is guessed.
 - Each item keeps its sources: which recipes need it and how much, linked to the recipe pages.
 
-Updating a list never resets it. Items keep their id and their Purchased or Already have state. Hand-added items always stay. If a purchased item now needs more, it moves back to Need to Buy with a note ("Need more: was 3 lbs, now 4 lbs"). Ingredients that are no longer planned are listed for you to **Remove** or **Keep**. Running Update on an unchanged plan changes nothing.
+**Update Shopping List** (only when you press it) makes the list match the current plan:
+
+- Ingredients no planned dinner needs any more are removed. Shared ones stay with the new amount (remove Burgers, and ground beef drops from 3 lbs to the 1 lb Taco Bowls need).
+- Items keep their id and their Purchased or Already have state. If a purchased item now needs more than was bought, it moves back to Need to Buy with a note ("Need more: was 3 lbs, now 4 lbs"). Needing less, or going down and back up to the amount bought, keeps it purchased.
+- Hand-added items always stay, including a Kitchen Staple you put on the list. Staples you didn't add stay out of Need to Buy.
+- Running Update on an unchanged plan changes nothing.
+
+**Clear purchased** (inside the open **Purchased** section) hides everything you've bought, so the list shows only what's left. Cleared items are remembered for that week, so an Update never puts them back, unless the plan now needs more of them. To buy something again, add it again: it returns to Need to Buy. Each week keeps its own records, so nothing carries over to other weeks.
 
 Sharing between phones: each open list asks the server "anything new?" every 5 seconds (8 on the planner), and stops while the tab is hidden. That check is a single tiny query, and the list is only re-sent when its version number has changed. Every change carries the item's revision number, so a phone showing an old list can't overwrite a newer change. It gets the latest list instead. Taps are saved in order and retried automatically if the connection drops. There's no Redis, WebSocket server, or background worker.
 
@@ -178,7 +200,7 @@ Needs HTTPS: the service worker (browsers allow it only on HTTPS or `localhost`)
 | `FAMILY_USERNAME` | — | Shared login name (set by `setup_login`) |
 | `FAMILY_PASSWORD_HASH` | — | scrypt hash of the password (set by `setup_login`) |
 | `FAMILY_TABLE_DATA_DIR` | `data` | Folder holding the database and photos |
-| `COOKIE_SECURE` | `false` | Set `true` once the site is served over HTTPS |
+| `COOKIE_SECURE` | `false` | `true` = HTTPS-only cookies. Docker and `scripts/serve.sh` set it to `true` themselves; keep `false` for the development server |
 | `MAX_UPLOAD_MB` | `12` | Largest accepted photo upload |
 | `SESSION_HOURS` | `12` | Normal sign-in length |
 | `REMEMBER_DAYS` | `30` | Sign-in length with "Keep me signed in" |
@@ -190,7 +212,7 @@ Everything personal lives in two places:
 1. **`data/`**: `family_table.db` (recipes, notes, meal plans, shopping lists, staples) and `uploads/` (photos)
 2. **`.env`**: your login hash and settings
 
-To back up or move to another computer, copy both. Stop the server first, or use `sqlite3 data/family_table.db ".backup backup.db"` for a safe copy while it runs. Neither is committed to Git.
+Docker uses the same two (`data/` is mounted into the container, and `.env` is read at start), so nothing changes for backups. To back up or move to another computer, copy both. Stop the server first, or use `sqlite3 data/family_table.db ".backup backup.db"` for a safe copy while it runs. Neither is committed to Git.
 
 ## Security notes
 
