@@ -1,7 +1,7 @@
 """Docker configuration and the one-server-per-data-folder lock.
 
 These read the files and run small processes; they don't need Docker itself. The container
-was also built and run for real against a copy of the data (see the README).
+was also built and run for real against a copy of the data (see docs/docker.md).
 """
 
 # subprocess runs a second Python process that tries to take the lock.
