@@ -68,8 +68,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- One row per planned week (keyed by its Monday). Version numbers let phones
--- ask "anything new?" cheaply; list_signature records which meals the
--- shopping list was built from (NULL = no list generated yet).
+-- ask "anything new?" cheaply. list_signature and list_built_at are left from the old
+-- whole-week "Generate Shopping List" and are no longer used.
 CREATE TABLE IF NOT EXISTS week_plans (
     week_start     TEXT    PRIMARY KEY CHECK (week_start GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     plan_version   INTEGER NOT NULL DEFAULT 0,
@@ -80,11 +80,17 @@ CREATE TABLE IF NOT EXISTS week_plans (
 );
 
 -- Dinner for one day of a week (day 0 = Monday). Empty days simply have no row.
+-- id stays with the dinner when it moves to another day, so its serving count,
+-- shopping additions, and assistant chat move with it. At most one dinner per day:
+-- the planner checks that inside a write transaction (a UNIQUE index would block swaps).
+-- Rows for past days are kept as the family's history.
 CREATE TABLE IF NOT EXISTS planned_meals (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
     week_start TEXT    NOT NULL REFERENCES week_plans(week_start) ON DELETE CASCADE,
     day        INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
     recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
-    PRIMARY KEY (week_start, day)
+    servings   INTEGER CHECK (servings IS NULL OR servings BETWEEN 1 AND 100),  -- NULL = the recipe's own yield
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 -- One line on a week's shopping list. item_key is the normalized name, so the
@@ -121,6 +127,39 @@ CREATE TABLE IF NOT EXISTS shopping_item_sources (
     times       INTEGER NOT NULL DEFAULT 1 CHECK (times > 0)
 );
 
+-- "Add ingredients" requests already applied, so a double tap or a retried request
+-- never adds the same selection twice.
+CREATE TABLE IF NOT EXISTS meal_list_requests (
+    request_key TEXT    PRIMARY KEY,
+    meal_id     INTEGER NOT NULL REFERENCES planned_meals(id) ON DELETE CASCADE,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The Cooking Assistant conversation for one planned dinner.
+CREATE TABLE IF NOT EXISTS meal_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id     INTEGER NOT NULL REFERENCES planned_meals(id) ON DELETE CASCADE,
+    role        TEXT    NOT NULL CHECK (role IN ('user', 'assistant')),
+    body        TEXT    NOT NULL,
+    kind        TEXT    NOT NULL DEFAULT 'text',  -- text, clarify, servings, proposal, offline
+    data_json   TEXT    NOT NULL DEFAULT '{}',    -- e.g. a pending substitution awaiting an answer
+    request_key TEXT,                             -- the browser's id for a sent message (retries)
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A permanent recipe change the assistant suggested. Saved only after Confirm.
+CREATE TABLE IF NOT EXISTS recipe_edit_proposals (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id      INTEGER NOT NULL REFERENCES planned_meals(id) ON DELETE CASCADE,
+    recipe_id    INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    message_id   INTEGER REFERENCES meal_messages(id) ON DELETE SET NULL,
+    changes_json TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'confirmed', 'cancelled', 'stale')),
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    decided_at   TEXT
+);
+
 -- Ingredients the family normally keeps at home (shared across all weeks).
 CREATE TABLE IF NOT EXISTS staples (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -137,6 +176,11 @@ CREATE TABLE IF NOT EXISTS app_meta (
 
 CREATE INDEX IF NOT EXISTS idx_ingredients_recipe ON ingredients(recipe_id, position);
 CREATE INDEX IF NOT EXISTS idx_planned_recipe ON planned_meals(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_planned_week_day ON planned_meals(week_start, day);
+CREATE INDEX IF NOT EXISTS idx_meal_messages_meal ON meal_messages(meal_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meal_messages_request ON meal_messages(meal_id, request_key)
+    WHERE request_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_proposals_meal ON recipe_edit_proposals(meal_id);
 CREATE INDEX IF NOT EXISTS idx_item_sources_item ON shopping_item_sources(item_id);
 CREATE INDEX IF NOT EXISTS idx_item_sources_recipe ON shopping_item_sources(recipe_id);
 CREATE INDEX IF NOT EXISTS idx_steps_recipe ON steps(recipe_id, position);
@@ -150,6 +194,11 @@ ADDED_COLUMNS = [
     ("recipes", "source_url", "TEXT NOT NULL DEFAULT ''"),
     ("shopping_items", "cleared", "INTEGER NOT NULL DEFAULT 0"),
     ("shopping_items", "bought_totals", "TEXT NOT NULL DEFAULT ''"),
+    # Which planned dinner added this amount, the ingredient as the recipe wrote it, and the
+    # serving count it was scaled for (so a later serving change can offer an update).
+    ("shopping_item_sources", "meal_id", "INTEGER REFERENCES planned_meals(id) ON DELETE SET NULL"),
+    ("shopping_item_sources", "ingredient", "TEXT NOT NULL DEFAULT ''"),
+    ("shopping_item_sources", "servings", "INTEGER"),
 ]
 
 
@@ -169,6 +218,7 @@ def init_db(db_path: Path) -> None:
     try:
         # WAL mode lets reads continue while a write is in progress.
         conn.execute("PRAGMA journal_mode = WAL")
+        upgrade_planned_meals(conn)
         conn.executescript(SCHEMA)
         migrate(conn)
         conn.commit()
@@ -181,6 +231,36 @@ DEFAULT_STAPLES = [
     "Salt", "Black pepper", "Garlic powder", "Onion powder", "Paprika",
     "Chili powder", "Olive oil", "Butter", "Milk",
 ]
+
+
+def upgrade_planned_meals(conn: sqlite3.Connection) -> None:
+    """Give planned dinners from older versions a stable id. Every planned dinner is kept.
+
+    Runs before SCHEMA so tables that refer to planned_meals(id) are created afterwards.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(planned_meals)")}
+    if not columns or "id" in columns:
+        return   # brand-new database, or already upgraded
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("DROP TABLE IF EXISTS planned_meals_upgrade")
+        conn.execute("""
+            CREATE TABLE planned_meals_upgrade (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_start TEXT    NOT NULL REFERENCES week_plans(week_start) ON DELETE CASCADE,
+                day        INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
+                recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+                servings   INTEGER CHECK (servings IS NULL OR servings BETWEEN 1 AND 100),
+                created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            )""")
+        conn.execute("""INSERT INTO planned_meals_upgrade (week_start, day, recipe_id)
+                        SELECT week_start, day, recipe_id FROM planned_meals ORDER BY week_start, day""")
+        conn.execute("DROP TABLE planned_meals")
+        conn.execute("ALTER TABLE planned_meals_upgrade RENAME TO planned_meals")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def migrate(conn: sqlite3.Connection) -> None:

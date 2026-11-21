@@ -1,0 +1,45 @@
+{# The Cooking Assistant conversation for this dinner (saved, so it resumes after the phone locks). #}
+{% if not messages %}
+<div class="chat-empty">
+    <p>Ask about tonight's {{ meal.recipe_name }}. For example:</p>
+    <ul>
+        <li>How much {{ (lines[0].name if lines else "flour") }} do I need tonight?</li>
+        <li>What do I do after step 1?</li>
+        <li>How many cups are in one US quart?</li>
+        <li>Make this for {{ (meal.servings or 4) + 2 }} tonight.</li>
+    </ul>
+</div>
+{% endif %}
+{% for m in messages %}
+<div class="chat-msg chat-msg--{{ m.role }}{% if m.kind == 'offline' %} chat-msg--offline{% endif %}">
+    <p class="chat-msg__body">{{ m.body }}</p>
+    {% if m.proposal %}
+    {% set p = m.proposal %}
+    <div class="proposal">
+        <ul class="proposal__changes">
+            {% for c in p.changes %}
+            <li>
+                <span class="proposal__where">{% if c.kind == "ingredient" %}Ingredient{% if c.amount %} ({{ c.amount }}){% endif %}{% else %}Step {{ c.step }}{% endif %}</span>
+                <del>{{ c.before }}</del>
+                <ins>{{ c.after }}</ins>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if p.status == "pending" %}
+        <div class="proposal__actions">
+            <form method="post" action="/plan/meals/{{ meal.id }}/proposals/{{ p.id }}/confirm" data-chat-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-primary btn-sm">Confirm</button>
+            </form>
+            <form method="post" action="/plan/meals/{{ meal.id }}/proposals/{{ p.id }}/cancel" data-chat-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn btn-outline btn-sm">Cancel</button>
+            </form>
+        </div>
+        {% else %}
+        <p class="proposal__status">{{ {"confirmed": "Saved to the recipe", "cancelled": "Cancelled", "stale": "Not saved: the recipe changed"}[p.status] }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}

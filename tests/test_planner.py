@@ -1,8 +1,8 @@
 # re pulls pieces out of rendered pages.
 import re
 
-# date/timedelta check week navigation.
-from datetime import date, timedelta
+# timedelta checks week navigation.
+from datetime import timedelta
 
 # pytest provides parametrize.
 import pytest
@@ -32,7 +32,8 @@ def test_add_recipe_to_a_day(auth_client, recipes):
     assert response.headers["location"] == f"/plan?week={W}#day-0"
     page = auth_client.get(f"/plan?week={W}").text
     assert "Taco Bowls" in day_card(page, 0)
-    assert f'href="/recipes/{recipes["tacos"]}"' in day_card(page, 0)   # opens the recipe
+    mid = query(auth_client.app.state.settings, "SELECT id FROM planned_meals")[0][0]
+    assert f'href="/plan/meals/{mid}"' in day_card(page, 0)               # opens the planned recipe
     assert "1 of 7 dinners planned" in page
 
 
@@ -98,10 +99,8 @@ def test_week_navigation(auth_client, recipes):
     assert "Nov 9 – 15, 2026" in page
     assert f'href="/plan?week={(WEEK - timedelta(days=7)).isoformat()}"' in page
     assert f'href="/plan?week={(WEEK + timedelta(days=7)).isoformat()}"' in page
-    # Default is the current Monday-to-Sunday week.
-    today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    assert f'data-week="{monday.isoformat()}"' in auth_client.get("/plan").text
+    # Default is the household's current Monday-to-Sunday week (tests freeze it at Mon Nov 9).
+    assert f'data-week="{W}"' in auth_client.get("/plan").text
     # A week across the new year.
     assert "Dec 28, 2026 – Jan 3, 2027" in auth_client.get("/plan?week=2026-12-28").text
 
@@ -166,39 +165,24 @@ def test_plan_live_endpoint(auth_client, recipes):
     assert data["version"] == version + 1 and "Tomato Soup" in data["html"]
 
 
-def test_generate_button_states(auth_client, recipes):
+def test_each_planned_dinner_has_its_own_add_ingredients_button(auth_client, recipes, settings):
     page = auth_client.get(f"/plan?week={W}").text
-    assert "Generate Shopping List</button>" in page and " disabled>" in page   # nothing planned yet
+    assert "Generate Shopping List" not in page and "Update Shopping List" not in page
     plan(auth_client, 0, recipes["tacos"])
-    assert "Generate Shopping List" in auth_client.get(f"/plan?week={W}").text
-    post(auth_client, f"/plan/{W}/shopping-list")
-    assert "Shopping list is up to date" in auth_client.get(f"/plan?week={W}").text
-    plan(auth_client, 1, recipes["burgers"])
+    plan(auth_client, 4, recipes["burgers"])
     page = auth_client.get(f"/plan?week={W}").text
-    assert "Update Shopping List" in page and "The plan changed" in page
+    meals = query(settings, "SELECT day, id FROM planned_meals ORDER BY day")
+    for day, mid in meals:
+        card = day_card(page, day)
+        assert f'href="/plan/meals/{mid}/ingredients" data-checklist-open' in card
+        assert f'href="/plan/meals/{mid}"' in card        # the title opens the planned recipe view
+    assert "Add ingredients" not in day_card(page, 1)     # blank days have nothing to add
 
 
-def test_rearranging_does_not_make_the_list_outdated(auth_client, recipes):
+def test_moving_a_dinner_keeps_its_identity(auth_client, recipes, settings):
     plan(auth_client, 0, recipes["tacos"])
-    plan(auth_client, 1, recipes["burgers"])
-    post(auth_client, f"/plan/{W}/shopping-list")
-    post(auth_client, f"/plan/{W}/move", {"from_day": 0, "to_day": 1})
-    assert "Shopping list is up to date" in auth_client.get(f"/plan?week={W}").text
-
-
-def test_editing_a_planned_recipe_makes_the_list_outdated(auth_client, recipes, settings):
-    plan(auth_client, 0, recipes["soup"])
-    post(auth_client, f"/plan/{W}/shopping-list")
-    from app.database import connect
-    conn = connect(settings.database_path)
-    with conn:
-        conn.execute("UPDATE ingredients SET amount = '3 cans' WHERE recipe_id = ?", (recipes["soup"],))
-    conn.close()
-    assert "Update Shopping List" in auth_client.get(f"/plan?week={W}").text
-
-
-def test_marking_made_does_not_make_the_list_outdated(auth_client, recipes):
-    plan(auth_client, 0, recipes["soup"])
-    post(auth_client, f"/plan/{W}/shopping-list")
-    post(auth_client, f"/recipes/{recipes['soup']}/made")
-    assert "Shopping list is up to date" in auth_client.get(f"/plan?week={W}").text
+    plan(auth_client, 3, recipes["burgers"])
+    ids = dict(query(settings, "SELECT recipe_id, id FROM planned_meals"))
+    post(auth_client, f"/plan/{W}/move", {"from_day": 0, "to_day": 3})
+    assert dict(query(settings, "SELECT recipe_id, id FROM planned_meals")) == ids   # swapped days, same dinners
+    assert query(settings, "SELECT day FROM planned_meals WHERE id = ?", (ids[recipes["tacos"]],)) == [(3,)]

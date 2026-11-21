@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "_macros.html" import wordmark, icon, recipe_card, photo_placeholder, flash %}
+{#- "with context" lets recipe cards read the household's today for "Made yesterday" labels. #}
+{% from "_macros.html" import wordmark, icon, recipe_card, photo_placeholder, flash with context %}
 
 {% block header %}
 <header class="site-header">

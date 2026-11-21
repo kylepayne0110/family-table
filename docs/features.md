@@ -5,6 +5,7 @@ Detailed notes on the main features. The [README](../README.md) has the overview
 - [Recipes](#recipes)
 - [Importing recipes from websites](#importing-recipes-from-websites)
 - [Meal Planner and Shopping List](#meal-planner-and-shopping-list)
+- [Planned dinners: servings and the Cooking Assistant](#planned-dinners-servings-and-the-cooking-assistant)
 - [Sharing a list between phones](#sharing-a-list-between-phones)
 - [iPhone app (Progressive Web App)](#iphone-app-progressive-web-app)
 - [Security](#security)
@@ -34,9 +35,10 @@ On **Add recipe**, paste a link into **Import from a website**. Family Table dow
 
 ## Meal Planner and Shopping List
 
-1. **Meal Planner**: tap **Add dinner** on a day and pick a recipe. Drag the ⋮⋮ handle to move a dinner (mouse or touch); dropping it on another dinner swaps them. A **Move** menu offers the same thing without dragging. Blank days add nothing to the list. Past and future weeks are available.
-2. **Generate Shopping List** gathers every planned recipe's ingredients. If the plan changes later, the button becomes **Update Shopping List**. Moving dinners between days doesn't count as a change, because the groceries are the same.
-3. **Shopping List** has three states: **Need to Buy**, **Already have**, and **Purchased**. Kitchen Staples sit in their own collapsed section. **Add an item...** covers anything else (paper towels, bananas). Each week keeps its own list.
+1. **Meal Planner**: tap **Add dinner** on a day and pick a recipe. Drag the ⋮⋮ handle to move a dinner (mouse or touch); dropping it on another dinner swaps them. A **Move** menu offers the same thing without dragging. Past and future weeks are available.
+2. **Past dinners**: a dinner stays on its day through 11:59 p.m. in the household's time zone (`HOUSEHOLD_TIMEZONE`, default America/Chicago). After midnight its slot is clear and it's listed under **Earlier this week**. The planned dinner, the recipe, and anything already on the shopping list are all kept. A planner left open overnight refreshes itself when the phone wakes up. Days that are over can't be changed.
+3. **Add ingredients** on a planned dinner opens a short checklist with that dinner's ingredients at its current serving count. Regular ingredients start checked; Kitchen Staples and anything that dinner already added start unchecked. The button shows the count ("Add 3 items") and is disabled with nothing checked. Only the checked ingredients of that one dinner are added; everything already on the list stays. Each checklist carries a one-time request key, so a double tap or a retried request adds nothing the second time, and adding the same dinner again replaces that dinner's earlier amounts instead of stacking them.
+4. **Shopping List** has three states: **Need to Buy**, **Already have**, and **Purchased**. Kitchen Staples sit in their own collapsed section. **Add an item...** covers anything else (paper towels, bananas). Each week keeps its own list.
 
 ### How ingredients are combined
 
@@ -48,17 +50,38 @@ On **Add recipe**, paste a link into **Import from a website**. Family Table dow
 
 ### Kitchen Staples
 
-A shared list of things the household always has (salt, butter, olive oil). Staples are left off **Need to Buy** automatically and shown in their own section, and one tap adds a staple back when it runs out.
+A shared list of things the household always has (salt, butter, olive oil). In a dinner's **Add ingredients** checklist, staples start unchecked, so they stay off the list unless you tick them. **We always have this** on a list item makes it a staple and moves it to the Kitchen Staples section, and one tap adds a staple back when it runs out.
 
-### Updating a list
+### When the plan changes
 
-**Update Shopping List** (only when pressed) makes the list match the current plan:
+The list only changes when someone adds to it. Removing or moving a dinner leaves its groceries on the list. If another dinner needs more of something that was already purchased (or cleared with **Clear purchased**), the item goes back to **Need to Buy** with a note ("Need more: was 3 lbs, now 4 lbs"). The old whole-week **Generate / Update Shopping List** button has been replaced by per-dinner **Add ingredients**.
 
-- Ingredients no planned dinner needs any more are removed. Shared ones keep the new amount (remove Burgers, and ground beef drops from 3 lbs to 1 lb).
-- Items keep their id and their Purchased or Already have state. If a purchased item now needs more than was bought, it moves back to Need to Buy with a note ("Need more: was 3 lbs, now 4 lbs").
-- Hand-added items always stay. Running Update on an unchanged plan changes nothing.
+**Clear purchased** hides everything already bought. Cleared items are remembered for that week, so adding the same dinner again doesn't bring them back unless more is now needed.
 
-**Clear purchased** hides everything already bought. Cleared items are remembered for that week, so an Update doesn't bring them back unless the plan now needs more.
+## Planned dinners: servings and the Cooking Assistant
+
+Tap a planned dinner's name to open it at that dinner's serving count.
+
+### Servings
+
+- **Cooking for** starts at the recipe's own yield. −/+ or typing a number updates the amounts immediately, and the choice is remembered for that planned dinner only; **Reset** goes back. The saved recipe never changes.
+- Amounts are always calculated from the recipe's original text and the ratio (wanted ÷ recipe yield), so changing back and forth never drifts. Numbers are shown as kitchen fractions (`1 1/8 lbs`, `3/8 tsp`); spoon amounts are re-expressed when that reads better (8 × 1 tbsp = `1/2 cup`). Descriptions like "salt to taste" stay as written.
+- In the steps, a quantity changes only when it equals an ingredient's amount, uses the same unit, and is followed by that ingredient's name ("Toss in 2 cups breadcrumbs" → "4 cups breadcrumbs"). Oven temperatures, times, pan sizes, and anything unclear stay as written.
+- Older recipes without a serving count ask once how many servings they make before scaling.
+- The **Add ingredients** checklist and the assistant use the same scaled amounts. Changing servings after adding groceries leaves the list alone; the checklist offers **Update list to N servings** for that dinner if you want it.
+
+### Cooking Assistant
+
+A chat panel for the open dinner, full screen on phones (**Back to recipe** returns to the same place) and beside the recipe on wide screens. Each planned dinner has its own saved conversation, so it resumes after the phone locks, and the same recipe planned twice has two separate conversations. Type, or tap the microphone where the browser supports speech recognition; if microphone access is denied, typing still works.
+
+The app owns the calculations and every database write. These requests are understood by the app itself, so they work even when the model is offline:
+
+- **Unit conversions** ("How many cups are in one US quart?"). Weight ↔ volume asks which ingredient it is, and answers only for ingredients with a dependable figure (flour, sugar, butter, milk…, never salt).
+- **Serving changes** ("Make this for eight tonight") use the same function as the serving selector and update the visible recipe at once, for this dinner only.
+- **Ingredient amounts** ("How much chicken do I need tonight?") from this dinner's scaled list.
+- **Permanent edits** ("From now on, use panko instead of breadcrumbs"): the app shows the exact changes to the saved recipe, including affected steps, with **Confirm** and **Cancel**. Only wording changes; amounts and the serving count stay as saved, so tonight's 8 servings never changes a 4-serving recipe. A proposal goes stale (and saves nothing) if the recipe was edited meanwhile. Without "from now on" or similar, the assistant asks one short question: for good, or just tonight?
+
+Everything else goes to the local Ollama model (`OLLAMA_MODEL`, default `qwen3:1.7b`) with the recipe name, yields, tonight's scaled ingredients, and the scaled steps in the prompt. There is no RAG, embeddings, or vector database. The model replies in JSON and may only *propose* an action (change servings, propose an edit, ask a question); the app validates it before doing anything. If Ollama is offline, the assistant says so and the recipe, serving selector, and checklist keep working.
 
 ## Sharing a list between phones
 
@@ -102,6 +125,10 @@ A PWA needs HTTPS (or `localhost`). Install steps and a test checklist are in [`
 | `MAX_UPLOAD_MB` | `12` | Largest accepted photo upload |
 | `SESSION_HOURS` | `12` | Normal sign-in length |
 | `REMEMBER_DAYS` | `30` | Sign-in length with "Keep me signed in" |
+| `HOUSEHOLD_TIMEZONE` | `America/Chicago` | The household's time zone: when a planned dinner's day ends |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server for the Cooking Assistant (only the server connects to it) |
+| `OLLAMA_MODEL` | `qwen3:1.7b` | Model the assistant uses |
+| `OLLAMA_TIMEOUT_SECONDS` | `90` | How long to wait for a model answer |
 
 ## Data and backups
 
@@ -118,4 +145,7 @@ To back up or move to another computer, copy both while the server is stopped, o
 - Ingredient matching is deliberately cautious, so near-matches with different wording can appear as two lines rather than being wrongly merged.
 - Mixed volume totals are written exactly ("1 1/2 cups + 2 tsp") rather than rounded. Items aren't grouped by store aisle.
 - List changes reach the other phone within about 5 seconds, not instantly.
+- The Cooking Assistant's permanent edits are word substitutions ("use X instead of Y"). Other recipe changes go through **Edit recipe**.
+- A small local model can misread open-ended questions; amounts, conversions, and serving changes come from the app, not the model.
+- Voice input uses the browser's speech recognition (Safari sends audio to Apple for transcription). Browsers without it show only the text box.
 - Login throttling is in memory and resets when the server restarts. The app is designed for one worker process.

@@ -8,6 +8,7 @@
 {% block scripts %}
 <script src="{{ static_url('js/live.js') }}" defer></script>
 <script src="{{ static_url('js/planner.js') }}" defer></script>
+<script src="{{ static_url('js/checklist.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -31,4 +32,6 @@
 <div data-live data-live-url="/plan/{{ week_iso }}/live" data-version="{{ plan_version }}">
     {% include "_plan_board.html" %}
 </div>
+
+{% include "_checklist_dialog.html" %}
 {% endblock %}

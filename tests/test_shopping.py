@@ -19,8 +19,8 @@ from app.database import connect
 
 # Shared helpers.
 from tests.conftest import login
-from tests.plan_helpers import (BURGERS, FETCH, PARM, TACOS, W, WEEK, add_recipe, all_items, generate, item,
-                                plan, post, query, state, token)
+from tests.plan_helpers import (BURGERS, FETCH, PARM, TACOS, W, WEEK, add_ingredients, add_recipe, all_items,
+                                checked, checklist, item, meal_id, plan, post, query, shop_week, state, token)
 
 
 def section_html(html: str, label: str) -> str:
@@ -43,31 +43,31 @@ def set_status(client, settings, name, status, fetch=False, rev=None):
 
 @pytest.fixture
 def week_of_tacos(auth_client, settings):
-    """Taco Bowls Monday, Burgers Wednesday, list generated."""
+    """Taco Bowls Monday, Burgers Wednesday; each dinner's default ingredients added to the list."""
     ids = {"tacos": add_recipe(settings, "Taco Bowls", TACOS), "burgers": add_recipe(settings, "Burgers", BURGERS),
            "parm": add_recipe(settings, "Chicken Parmesan", PARM)}
     plan(auth_client, 0, ids["tacos"])
     plan(auth_client, 2, ids["burgers"])
-    generate(auth_client)
+    shop_week(auth_client, settings)
     return ids
 
 
-# ---- Generating a list ----
+# ---- Adding a dinner's ingredients ----
 
-def test_generate_gathers_and_combines_ingredients(auth_client, settings, week_of_tacos):
+def test_each_dinner_adds_and_combines_ingredients(auth_client, settings, week_of_tacos):
+    # Staples (butter, salt, pepper) start unchecked, so they stay off the list.
     names = sorted(i["name"] for i in all_items(settings))
-    assert names == ["Black pepper", "Burger buns", "Butter", "Corn tortillas", "Ground beef", "Onion", "Salt", "Tomatoes"]
+    assert names == ["Burger buns", "Corn tortillas", "Ground beef", "Onion", "Tomatoes"]
     assert item(settings, "Ground beef")["display_qty"] == "3 lbs"
     assert item(settings, "Onion")["display_qty"] == "2"
 
 
-def test_generate_redirects_with_summary(auth_client, settings):
+def test_adding_without_javascript_opens_the_list(auth_client, settings):
     rid = add_recipe(settings, "Taco Bowls", TACOS)
     plan(auth_client, 0, rid)
-    response = generate(auth_client)
-    assert response.status_code == 303
-    page = auth_client.get(response.headers["location"]).text
-    assert "Shopping list ready: 4 to buy, 1 kitchen staple set aside." in page
+    response = add_ingredients(auth_client, settings, 0, fetch=False)
+    assert response.status_code == 303 and response.headers["location"] == f"/shopping?week={W}"
+    assert "Ground beef" in auth_client.get(response.headers["location"]).text
 
 
 def test_sources_are_kept_and_linked(auth_client, settings, week_of_tacos):
@@ -83,7 +83,7 @@ def test_unit_conversion_through_the_whole_flow(auth_client, settings):
     b = add_recipe(settings, "Meatloaf", [("1 lb", "lean ground beef"), ("2 teaspoons", "ground cumin")])
     plan(auth_client, 0, a)
     plan(auth_client, 1, b)
-    generate(auth_client)
+    shop_week(auth_client, settings)
     assert item(settings, "Ground beef")["display_qty"] == "2 lbs"
     assert item(settings, "Cumin")["display_qty"] == "1 tbsp"
 
@@ -91,27 +91,27 @@ def test_unit_conversion_through_the_whole_flow(auth_client, settings):
 def test_unknown_quantities_and_different_ingredients(auth_client, settings):
     rid = add_recipe(settings, "Garlic Bread", [("", "fresh parsley"), ("3 cloves", "garlic"), ("1 tsp", "garlic powder")])
     plan(auth_client, 0, rid)
-    generate(auth_client)
+    shop_week(auth_client, settings)
     assert item(settings, "Parsley")["display_qty"] == ""          # not invented
     assert item(settings, "Garlic")["display_qty"] == "3 cloves"
-    assert item(settings, "Garlic powder")["status"] == "staple"   # separate item, and a default staple
+    # Garlic powder is a separate ingredient, and a default staple, so it started unchecked.
+    assert "Garlic powder" not in {i["name"] for i in all_items(settings)}
 
 
-def test_staples_are_excluded_into_their_own_section(auth_client, settings, week_of_tacos):
-    assert status_of(settings, "Butter") == "staple"
-    assert status_of(settings, "Salt") == "staple"
+def test_staples_start_unchecked_in_the_checklist(auth_client, settings, week_of_tacos):
+    html = checklist(auth_client, meal_id(settings, 0))
+    butter = re.search(r'<li>\s*<label class="check-row">(?:(?!</li>).)*butter(?:(?!</li>).)*</li>', html, re.S).group(0)
+    assert "checked" not in butter.split("check-row__box")[0] and ">Staple<" in butter
+    assert "Butter" not in {i["name"] for i in all_items(settings)}
     page = auth_client.get(f"/shopping?week={W}").text
-    assert "Butter" not in section_html(page, "need")
-    staples = section_html(page, "staple")
-    assert "Kitchen Staples <span>(3 excluded)</span>" in staples
-    assert "Butter" in staples and "Black pepper" in staples
-    assert "Ground beef" in section_html(page, "need")
+    assert "Ground beef" in section_html(page, "need") and section_html(page, "staple") == ""
 
 
-def test_empty_plan_generates_nothing(auth_client, settings):
-    response = generate(auth_client)
-    assert response.headers["location"] == f"/plan?week={W}&msg=empty"
-    assert "Nothing to shop for yet" in auth_client.get(response.headers["location"]).text
+def test_choosing_nothing_adds_nothing(auth_client, settings):
+    rid = add_recipe(settings, "Taco Bowls", TACOS)
+    plan(auth_client, 0, rid)
+    response = add_ingredients(auth_client, settings, 0, indexes=[])
+    assert response.status_code == 422 and "Choose at least one" in response.json()["error"]
     assert query(settings, "SELECT COUNT(*) FROM shopping_items") == [(0,)]
 
 
@@ -166,12 +166,14 @@ def test_new_staples_are_excluded_next_time(auth_client, settings):
     post(auth_client, "/staples", {"name": "Corn tortillas", "week": W})
     rid = add_recipe(settings, "Taco Bowls", TACOS)
     plan(auth_client, 0, rid)
-    generate(auth_client)
-    assert status_of(settings, "Corn tortillas") == "staple"
+    html = checklist(auth_client, meal_id(settings, 0))
+    assert checked(html) == [0, 1, 2]                 # beef, onion, tomatoes; tortillas and butter unchecked
+    shop_week(auth_client, settings)
+    assert "Corn tortillas" not in {i["name"] for i in all_items(settings)}
 
 
-def test_adding_an_excluded_staple_back_keeps_it_a_staple(auth_client, settings, week_of_tacos):
-    assert set_status(auth_client, settings, "Butter", "need").status_code == 303
+def test_checking_a_staple_puts_it_on_the_list_and_keeps_it_a_staple(auth_client, settings, week_of_tacos):
+    add_ingredients(auth_client, settings, 0, indexes=[4])                # tick Butter by hand
     page = auth_client.get(f"/shopping?week={W}").text
     assert "Butter" in section_html(page, "need")
     assert ("Butter",) in query(settings, "SELECT name FROM staples")    # still a permanent staple
@@ -188,6 +190,8 @@ def test_add_staple_to_list_from_the_staples_page(auth_client, settings):
 
 
 def test_staple_from_page_matches_existing_recipe_item(auth_client, settings, week_of_tacos):
+    add_ingredients(auth_client, settings, 0, indexes=[4])                # butter from Taco Bowls
+    set_status(auth_client, settings, "Butter", "have")
     butter = query(settings, "SELECT id FROM staples WHERE name = 'Butter'")[0][0]
     post(auth_client, f"/staples/{butter}/list", {"week": W})
     butter_items = [i for i in all_items(settings) if "butter" in i["item_key"]]
@@ -287,84 +291,36 @@ def test_invalid_status_is_refused(auth_client, settings, week_of_tacos):
     assert set_status(auth_client, settings, "Onion", "staple", fetch=True).status_code == 422
 
 
-# ---- Updating after the plan changes ----
+# ---- The same ingredient from more than one dinner ----
 
-def test_update_after_swapping_a_meal(auth_client, settings, week_of_tacos):
-    """We planned Taco Bowls, then switched Monday to Chicken Parmesan."""
-    post(auth_client, f"/shopping/{W}/items", {"name": "Paper towels"})
-    set_status(auth_client, settings, "Ground beef", "bought")
-    beef_id = item(settings, "Ground beef")["id"]
-
-    plan(auth_client, 0, week_of_tacos["parm"])
-    assert "The meal plan changed" in auth_client.get(f"/shopping?week={W}").text
-    response = generate(auth_client)
-    assert "built=update" in response.headers["location"]
-
-    # New ingredients arrive; ones only Taco Bowls needed are removed straight away.
-    assert item(settings, "Chicken breasts")["status"] == "need"
-    names = {i["name"] for i in all_items(settings)}
-    assert "Tomatoes" not in names and "Corn tortillas" not in names
-    page = auth_client.get(response.headers["location"]).text
-    assert "3 no longer needed" in page and "Tomatoes" not in page   # and Butter, an excluded staple
-
-    # Kept: purchase state, hand-added item, stable ids. Quantity updated (only Burgers now).
-    beef = item(settings, "Ground beef")
-    assert beef["id"] == beef_id and beef["status"] == "bought" and beef["display_qty"] == "2 lbs"
-    assert item(settings, "Paper towels")["status"] == "need"
-    assert item(settings, "Onion")["display_qty"] == "2"   # Burgers + Chicken Parmesan
-
-
-def test_regenerating_an_unchanged_plan_changes_nothing(auth_client, settings, week_of_tacos):
-    set_status(auth_client, settings, "Onion", "bought")
-    set_status(auth_client, settings, "Tomatoes", "have")
-    before = all_items(settings)
-    version = state(settings)["version"]
-    response = generate(auth_client)
-    assert "changed=0" in response.headers["location"]
-    assert all_items(settings) == before          # same ids, revs, statuses, no duplicates
-    assert state(settings)["version"] == version
-    assert "Nothing changed." in auth_client.get(response.headers["location"]).text
-
-
-def test_purchased_item_needing_more_goes_back_with_a_note(auth_client, settings, week_of_tacos):
-    set_status(auth_client, settings, "Ground beef", "bought")
-    plan(auth_client, 4, week_of_tacos["tacos"])      # Taco Bowls a second time
-    generate(auth_client)
+def test_another_dinner_needing_more_puts_a_purchase_back_with_a_note(auth_client, settings, week_of_tacos):
+    set_status(auth_client, settings, "Ground beef", "bought")       # bought 3 lbs
+    plan(auth_client, 4, week_of_tacos["tacos"])                      # Taco Bowls a second time
+    add_ingredients(auth_client, settings, 4)
     beef = item(settings, "Ground beef")
     assert beef["status"] == "need" and beef["display_qty"] == "4 lbs"
     assert beef["change_note"] == "Need more: was 3 lbs, now 4 lbs"
     assert "Need more: was 3 lbs, now 4 lbs" in auth_client.get(f"/shopping?week={W}").text
 
 
-def test_purchased_item_needing_less_stays_purchased(auth_client, settings, week_of_tacos):
-    set_status(auth_client, settings, "Ground beef", "bought")
-    post(auth_client, f"/plan/{W}/day/2/clear")      # drop Burgers
-    generate(auth_client)
+def test_adding_the_same_dinner_again_never_doubles(auth_client, settings, week_of_tacos):
+    before = {i["name"]: i["display_qty"] for i in all_items(settings)}
+    add_ingredients(auth_client, settings, 0, indexes=[0, 1, 2, 3])  # a fresh tap, all of Monday again
+    after = {i["name"]: i["display_qty"] for i in all_items(settings)}
+    assert after == before                                           # Monday's amounts replace themselves
+
+
+def test_removing_a_dinner_keeps_what_is_on_the_list(auth_client, settings, week_of_tacos):
+    post(auth_client, f"/plan/{W}/day/2/clear")
     beef = item(settings, "Ground beef")
-    assert beef["status"] == "bought" and beef["change_note"] == "Was 3 lbs, now 1 lb"
-    assert beef["display_qty"] == "1 lb"
-
-
-def test_staple_overrides_survive_updates(auth_client, settings, week_of_tacos):
-    set_status(auth_client, settings, "Butter", "need")
-    plan(auth_client, 4, week_of_tacos["parm"])
-    generate(auth_client)
-    assert status_of(settings, "Butter") == "need"
-
-
-def test_hand_added_item_that_matches_a_removed_recipe_item_stays(auth_client, settings, week_of_tacos):
-    post(auth_client, f"/shopping/{W}/items", {"name": "Corn tortillas", "quantity": "1 pack"})
-    post(auth_client, f"/plan/{W}/day/0/clear")
-    generate(auth_client)
-    tortillas = item(settings, "Corn tortillas")
-    assert not tortillas["stale"] and tortillas["display_qty"] == "1 pack"
+    assert beef["display_qty"] == "3 lbs" and "Burger buns" in {i["name"] for i in all_items(settings)}
 
 
 def test_weeks_have_separate_lists(auth_client, settings, week_of_tacos):
     set_status(auth_client, settings, "Ground beef", "bought")
     next_week = WEEK + timedelta(days=7)
     plan(auth_client, 0, week_of_tacos["tacos"], week=next_week.isoformat())
-    generate(auth_client, week=next_week.isoformat())
+    add_ingredients(auth_client, settings, 0, week=next_week.isoformat())
     assert item(settings, "Ground beef", week=next_week)["status"] == "need"   # purchases don't carry over
     assert item(settings, "Ground beef")["status"] == "bought"                  # last week kept
     assert "Ground beef" in auth_client.get(f"/shopping?week={W}").text
@@ -435,7 +391,8 @@ def test_concurrent_changes_are_all_saved(auth_client, settings, week_of_tacos):
         try:
             shopping.add_item(conn, WEEK, f"Thing {n}")
             shopping.add_item(conn, WEEK, "Milk")          # everyone adds milk
-            shopping.generate_list(conn, WEEK)             # and presses Update
+            meal = conn.execute("SELECT id FROM planned_meals WHERE day = 0").fetchone()[0]
+            shopping.add_meal_ingredients(conn, meal, [0, 1, 2, 3], None)   # and adds Monday's dinner
         except Exception as exc:  # noqa: BLE001 - collect anything for the assertion
             errors.append(exc)
         finally:

@@ -1,0 +1,9 @@
+{# Holds a dinner's "Add ingredients" checklist as a sheet over the page (filled by checklist.js). #}
+{% from "_macros.html" import icon %}
+<dialog class="sheet" data-checklist-dialog aria-labelledby="checklist-title">
+    <div class="sheet__bar">
+        <p class="sheet__label" id="checklist-title">Add ingredients</p>
+        <button type="button" class="icon-button" data-sheet-close aria-label="Close">{{ icon("x", 18) }}</button>
+    </div>
+    <div class="sheet__body" data-checklist-body></div>
+</dialog>

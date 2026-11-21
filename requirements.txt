@@ -7,3 +7,4 @@ pillow==13.0.0            # photo validation and resizing
 python-dotenv==1.2.4      # loads settings from .env
 recipe-scrapers==15.13.0  # reads recipe data from web pages (offline parsing only)
 beautifulsoup4==4.15.0    # finds JSON-LD recipe blocks (also used by recipe-scrapers)
+tzdata==2026.6            # time zone rules for HOUSEHOLD_TIMEZONE (the slim Docker image has none)

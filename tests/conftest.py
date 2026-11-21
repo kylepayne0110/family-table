@@ -4,6 +4,10 @@ import io
 # re pulls the CSRF token out of rendered pages.
 import re
 
+# datetime fixes the household clock so tests never depend on the real date.
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 # pytest provides fixtures.
 import pytest
 
@@ -23,6 +27,11 @@ USERNAME = "family"
 PASSWORD = "correct horse battery"
 PASSWORD_HASH = hash_password(PASSWORD)  # hashed once; scrypt is deliberately slow
 
+# Tests run on Monday, Nov 9 2026 at noon in the household's time zone (the planner tests'
+# week), so every day of that week is still ahead. Tests that need another moment set
+# client.app.state.clock.frozen themselves.
+TEST_NOW = datetime(2026, 11, 9, 12, 0, tzinfo=ZoneInfo("America/Chicago"))
+
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
@@ -33,8 +42,17 @@ def settings(tmp_path) -> Settings:
 @pytest.fixture
 def client(settings):
     # "with" runs the app's startup, which creates the test database.
-    with TestClient(create_app(settings), follow_redirects=False) as c:
+    app = create_app(settings)
+    app.state.clock.frozen = TEST_NOW
+    app.state.ask_model = offline_model   # tests never call a real Ollama server
+    with TestClient(app, follow_redirects=False) as c:
         yield c
+
+
+def offline_model(messages, response_format=None):
+    """Stand-in for Ollama when it isn't running."""
+    from app.ollama import AssistantUnavailable
+    raise AssistantUnavailable("Ollama isn't answering.")
 
 
 @pytest.fixture

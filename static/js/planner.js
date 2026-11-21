@@ -9,6 +9,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const live = new window.LiveRegion(el, {
     interval: 8000,
     canApply: () => !drag && !el.querySelector("details.move-menu[open]"),
+    // The date this board was drawn for: after midnight (household time) the server sends a
+    // fresh board, so yesterday's dinner leaves the active planner.
+    params: () => ({ today: board()?.dataset.today || "" }),
   });
   live.start();
 

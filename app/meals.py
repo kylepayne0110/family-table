@@ -249,10 +249,10 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> dict | None:
         return None
     recipe = dict(row)
     recipe["ingredients"] = conn.execute(
-        "SELECT amount, name FROM ingredients WHERE recipe_id = ? ORDER BY position", (recipe_id,)
+        "SELECT id, amount, name FROM ingredients WHERE recipe_id = ? ORDER BY position", (recipe_id,)
     ).fetchall()
     recipe["steps"] = conn.execute(
-        "SELECT title, body FROM steps WHERE recipe_id = ? ORDER BY position", (recipe_id,)
+        "SELECT id, title, body FROM steps WHERE recipe_id = ? ORDER BY position", (recipe_id,)
     ).fetchall()
     recipe["notes"] = conn.execute(
         "SELECT id, author, body, created_at FROM notes WHERE recipe_id = ? ORDER BY created_at DESC, id DESC",
@@ -306,6 +306,43 @@ def save_recipe(conn: sqlite3.Connection, data: RecipeData, photo_filename: str 
             [(recipe_id, pos, title, body) for pos, (title, body) in enumerate(data.steps)],
         )
     return recipe_id
+
+
+class StaleChange(Exception):
+    """The recipe was edited after a change was proposed, so the proposal no longer fits."""
+
+
+_CHANGE_COLUMNS = {
+    "ingredient": ("ingredients", "name"),
+    "step_title": ("steps", "title"),
+    "step_body": ("steps", "body"),
+}
+
+
+def apply_recipe_changes(conn: sqlite3.Connection, recipe_id: int, changes: list[dict]) -> None:
+    """Save confirmed wording changes to a recipe, all or nothing.
+
+    Each change names a row and the exact text it expects to replace; if any text differs
+    (someone edited the recipe meanwhile), nothing is saved. Amounts and the serving count
+    are never touched, so the recipe keeps its original baseline.
+    """
+    from app.database import write_transaction  # local import keeps meals.py free of cycles
+    with write_transaction(conn):
+        apply_recipe_changes_in_transaction(conn, recipe_id, changes)
+
+
+def apply_recipe_changes_in_transaction(conn: sqlite3.Connection, recipe_id: int, changes: list[dict]) -> None:
+    """apply_recipe_changes for a caller that already holds the write transaction."""
+    for change in changes:
+        table, column = _CHANGE_COLUMNS[change["kind"]]
+        # Table and column names come from the fixed map above, never from the request.
+        row = conn.execute(f"SELECT {column} FROM {table} WHERE id = ? AND recipe_id = ?",
+                           (change["id"], recipe_id)).fetchone()
+        if row is None or row[0] != change["before"]:
+            raise StaleChange("The recipe changed since this was suggested.")
+        conn.execute(f"UPDATE {table} SET {column} = ? WHERE id = ?", (change["after"], change["id"]))
+    conn.execute("UPDATE recipes SET updated_at = datetime('now') WHERE id = ?", (recipe_id,))
+
 
 
 def delete_recipe(conn: sqlite3.Connection, recipe_id: int) -> None:

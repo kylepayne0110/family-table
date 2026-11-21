@@ -6,7 +6,7 @@ A self-hosted recipe box, weekly meal planner, and shared shopping list for a ho
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-488%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-537%20passing-2ea44f)
 
 ## The problem
 
@@ -16,8 +16,9 @@ Family Table brings it together:
 
 1. **Save recipes** by typing them in or pasting a link from a recipe website.
 2. **Plan the week** by dragging dinners onto days.
-3. **Generate one shopping list** that combines matching ingredients across recipes and leaves out pantry staples.
-4. **Shop together**: items ticked off on one phone disappear from the other within seconds.
+3. **Add each dinner's ingredients** to one shared list, choosing what you actually need, with pantry staples left unchecked.
+4. **Cook with help**: scale tonight's dinner for more people and ask a local AI cooking assistant about the recipe.
+5. **Shop together**: items ticked off on one phone disappear from the other within seconds.
 
 ## Features
 
@@ -25,8 +26,10 @@ Family Table brings it together:
 |---|---|
 | **Recipes** | Photos, categories, search, ingredient checklist, cooking steps, and signed notes from family members |
 | **Recipe import** | Paste a URL; the form is pre-filled from the page's schema.org data for review before saving. Downloads go through an SSRF-safe fetcher |
-| **Meal planning** | Monday–Sunday board with drag-and-drop (mouse and touch), swapping, and past/future weeks |
-| **Shopping list** | Ingredients combined with exact fraction math and unit conversion; each item lists the recipes that need it. Updates keep purchase state when the plan changes |
+| **Meal planning** | Monday–Sunday board with drag-and-drop (mouse and touch), swapping, and past/future weeks. A dinner leaves the board at midnight in the household's time zone and stays in the week's history |
+| **Serving sizes** | Each planned dinner can be cooked for a different number of people; amounts (and quantities repeated in the steps) scale from the original with readable fractions |
+| **Shopping list** | **Add ingredients** per dinner with a checklist (staples start unchecked); amounts combined with exact fraction math and unit conversion; each item lists the recipes that need it. Double taps never add twice |
+| **Cooking Assistant** | A chat panel per planned dinner using a local Ollama model (`qwen3:1.7b`), with voice input where the browser supports it. The app does the math (conversions, scaling) and only saves a recipe change after you confirm |
 | **Shared sync** | Lightweight polling with version numbers and optimistic concurrency, so phones stay in step without WebSockets or a message broker |
 | **Kitchen Staples** | A household list of always-on-hand items that stay off "Need to Buy" until someone runs out |
 | **Progressive Web App** | Installable on iPhone home screens, full screen, with an offline notice. The service worker never caches private data |
@@ -102,10 +105,16 @@ app/
   auth.py            Password hashing, sessions, CSRF, login throttling
   routes.py          Login and recipe pages
   plan_routes.py     Planner, shopping list, and staples pages and JSON endpoints
+  meal_routes.py     One planned dinner: servings, Add ingredients, Cooking Assistant
   meals.py           Recipe queries and validation
-  planner.py         Weekly plans: days, moving, swapping
+  planner.py         Weekly plans: days, moving, swapping, servings, past days
+  clock.py           "Today" in the household's time zone
+  scaling.py         Serving math, readable fractions, unit conversion
+  assistant.py       Cooking Assistant: requests the app answers itself, and the model prompt
+  meal_chat.py       Saved conversations and confirmed recipe edits
+  ollama.py          Client for the local Ollama server
   ingredients.py     Ingredient parsing, normalization, and combining
-  shopping.py        List generation, updates, item states, staples
+  shopping.py        Per-dinner additions, item states, staples
   recipe_import.py   Recipe extraction from downloaded HTML
   safe_fetch.py      SSRF-safe downloader
   images.py          Photo validation and processing
@@ -190,6 +199,11 @@ Settings are read from `.env`. See [`.env.example`](.env.example).
 | `COOKIE_SECURE` | `false` | HTTPS-only cookies (forced on in Docker and `serve.sh`) |
 | `MAX_UPLOAD_MB` | `12` | Largest photo upload |
 | `SESSION_HOURS` / `REMEMBER_DAYS` | `12` / `30` | Session lengths |
+| `HOUSEHOLD_TIMEZONE` | `America/Chicago` | When a day (and its planned dinner) ends |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server for the Cooking Assistant |
+| `OLLAMA_MODEL` / `OLLAMA_TIMEOUT_SECONDS` | `qwen3:1.7b` / `90` | Model name and how long to wait for an answer |
+
+The Cooking Assistant needs [Ollama](https://ollama.com) running with the model pulled (`ollama pull qwen3:1.7b`). Without it, everything else still works and the assistant says it can't reach the model. In Docker, the container reaches Ollama on the host at `http://host.docker.internal:11434` (set `OLLAMA_URL_DOCKER` to change it); Ollama must accept connections from Docker (on Windows, Docker Desktop forwards to it; elsewhere set `OLLAMA_HOST=0.0.0.0`). Under WSL without mirrored networking, `127.0.0.1` doesn't reach Ollama on Windows: point `OLLAMA_URL` at the Windows host's address.
 
 ## Testing
 
@@ -198,13 +212,14 @@ source .venv/bin/activate
 python -m pytest
 ```
 
-The suite has **488 tests**. Each test gets its own temporary database and upload folder, so tests never touch real data, and the recipe-import tests use a local test server instead of the internet. Coverage includes:
+The suite has **537 tests**. Each test gets its own temporary database and upload folder, so tests never touch real data, and the recipe-import tests use a local test server instead of the internet. Coverage includes:
 
 - Authentication, sessions, CSRF, and login throttling
 - Recipe CRUD, validation, and photo processing
 - Recipe import parsing and SSRF protection (private ranges, IPv6 encodings, redirects, DNS rebinding)
 - Ingredient parsing, unit conversion, and combining
-- Meal planning, shopping-list generation and updates, concurrency, and staples
+- Meal planning, the local-midnight boundary, per-dinner shopping selections, concurrency, and staples
+- Serving scaling and unit conversion, the Cooking Assistant (with a stand-in model), and recipe-edit confirmation
 - PWA manifest and service worker rules
 - Production hosting settings and the Docker configuration
 

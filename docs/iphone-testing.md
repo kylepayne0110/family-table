@@ -44,7 +44,19 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 - [ ] **Add dinner** → pick a recipe. **Change** and **Remove** work.
 - [ ] Drag a dinner by its ⋮⋮ handle onto another day (they swap). Also try the **Move** menu.
 - [ ] Previous and next week arrows work.
-- [ ] **Generate / Update Shopping List** works.
+- [ ] Leave the planner open past midnight (or set the phone's clock ahead is **not** enough: the server's household time zone decides). The next morning, yesterday's dinner has left its day and appears under **Earlier this week**.
+- [ ] **Add ingredients** on a dinner opens a short checklist as a sheet. Staples start unchecked. The button reads "Add 1 item", "Add 3 items", and is disabled with nothing checked. Double-tapping it adds the items once.
+
+## 5a. Planned dinner and Cooking Assistant
+
+- [ ] Tap a planned dinner's name: the recipe opens with **Cooking for** −/+ buttons. Changing servings updates the amounts straight away; **Reset** goes back.
+- [ ] **Cooking Assistant** opens full screen. **Back to recipe** returns to the same scroll position.
+- [ ] Ask "How much chicken do I need tonight?" and "How many cups are in one US quart?".
+- [ ] Say "Make this for eight tonight": the servings and amounts change underneath.
+- [ ] Say "From now on use panko instead of breadcrumbs": a list of changes with **Confirm** and **Cancel** appears. Nothing is saved until Confirm.
+- [ ] Lock the phone mid-conversation, unlock, and reopen: the conversation is still there.
+- [ ] Tap the microphone: Safari asks for microphone (and speech recognition) permission. Allow it and speak a question. Then deny it in Settings → Safari → Microphone and check the message says typing still works.
+- [ ] Stop Ollama on the computer and ask a question that needs the model: a clear "can't reach the local cooking model" message appears, and servings and **Add ingredients** still work.
 
 ## 6. Shopping List (both phones open on the list)
 
@@ -53,7 +65,7 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 - [ ] Within about 5–10 seconds Phone A shows the same.
 - [ ] Open **Purchased**, tap the item, and it goes back to Need to Buy (undo).
 - [ ] Buy two items, open **Purchased**, tap **Clear purchased**. The section disappears on both phones, and Need to Buy is unchanged.
-- [ ] Remove a dinner in the Meal Planner. The list doesn't change until **Update Shopping List** is tapped. Then groceries only that dinner needed disappear, shared ones show the smaller amount, and hand-added items stay.
+- [ ] Remove a dinner in the Meal Planner. Nothing already on the list changes.
 - [ ] **⋯ → Already have it** puts it under **Already have**, separate from Purchased.
 - [ ] **Kitchen Staples** opens, and **Add to list** works.
 - [ ] Lock the phone for a minute, then unlock it. The list catches up right away.

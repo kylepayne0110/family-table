@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}Add ingredients · {{ meal.recipe_name }} · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/checklist.js') }}" defer></script>
+{% endblock %}
+
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/plan?week={{ week_iso }}">{{ icon("arrow-left", 16) }}Meal Planner</a>
+<div class="checklist-page" data-checklist-body>
+    {% include "_meal_checklist.html" %}
+</div>
+{% endblock %}

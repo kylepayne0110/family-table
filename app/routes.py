@@ -10,6 +10,9 @@ from datetime import date, datetime, timedelta
 # hmac.compare_digest compares the login CSRF token safely.
 import hmac
 
+# pass_context lets the "last made" filter read today's date from the page.
+from jinja2 import pass_context
+
 # urlencode builds filter links; urlsplit shows an import's website name.
 from urllib.parse import urlencode, urlsplit
 
@@ -66,12 +69,14 @@ def total_time(recipe) -> str:
     return duration((recipe["prep_minutes"] or 0) + (recipe["cook_minutes"] or 0))
 
 
-def made_label(iso_date: str | None) -> str:
-    """Friendly 'last made' text relative to today."""
+@pass_context
+def made_label(context, iso_date: str | None) -> str:
+    """Friendly 'last made' text relative to the household's today."""
     if not iso_date:
         return ""
     made = date.fromisoformat(iso_date)
-    days = (date.today() - made).days
+    days = (context.get("today") or date.today()) - made
+    days = days.days
     if days <= 0:
         return "Made today"
     if days == 1:
@@ -114,7 +119,7 @@ def render(request: Request, name: str, context: dict, session: auth.Session | N
            status_code: int = 200):
     """Render a template with the CSRF token available to every form."""
     context = {"csrf_token": session.csrf_token if session else "", "signed_in": session is not None,
-               "nav_active": "recipes", **context}
+               "nav_active": "recipes", "today": request.app.state.clock.today(), **context}
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
@@ -209,9 +214,10 @@ def home(request: Request, q: str = "", category: str = "", msg: str = "",
     category = category if category in CATEGORIES else ""
     filtering = bool(q or category)
 
-    featured = None if filtering else meals.featured_recipe(conn, date.today())
+    today = request.app.state.clock.today()
+    featured = None if filtering else meals.featured_recipe(conn, today)
     return render(request, "meals.html", {
-        "today": date.today(),
+        "today": today,
         "total": meals.count_recipes(conn),
         "recipes": meals.list_recipes(conn, q, category),
         "featured": featured,
@@ -329,7 +335,7 @@ def recipe_detail(request: Request, recipe_id: int, msg: str = "",
     recipe = recipe_or_404(conn, recipe_id)
     return render(request, "meal_detail.html", {
         "recipe": recipe, "message": MESSAGES.get(msg, ""),
-        "made_today": recipe["last_made"] == date.today().isoformat(),
+        "made_today": recipe["last_made"] == request.app.state.clock.today().isoformat(),
     }, session)
 
 
@@ -368,7 +374,7 @@ async def made_today(request: Request, recipe_id: int,
                      conn: sqlite3.Connection = Depends(get_db)):
     await auth.read_form_with_csrf(request, session.csrf_token)
     recipe_or_404(conn, recipe_id)
-    meals.mark_made(conn, recipe_id, date.today())
+    meals.mark_made(conn, recipe_id, request.app.state.clock.today())
     return redirect(f"/recipes/{recipe_id}?msg=made")
 
 
@@ -390,7 +396,7 @@ async def create_note(request: Request, recipe_id: int,
         return render(request, "meal_detail.html", {
             "recipe": recipe, "note_error": error,
             "note_values": {"author": author, "body": body},
-            "made_today": recipe["last_made"] == date.today().isoformat(),
+            "made_today": recipe["last_made"] == request.app.state.clock.today().isoformat(),
         }, session, 422)
 
     meals.add_note(conn, recipe_id, author, body)

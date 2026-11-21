@@ -7,6 +7,9 @@ from dataclasses import dataclass
 # Path provides filesystem utilities.
 from pathlib import Path
 
+# ZoneInfo turns the household time zone name into dates ("is it Saturday yet?").
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 # load_dotenv copies values from .env into the environment.
 from dotenv import load_dotenv
 
@@ -21,6 +24,9 @@ CATEGORIES: dict[str, str] = {
     "kids-pick": "Kids' pick",
     "soups": "Soups",
 }
+
+# Used when .env doesn't name the household's time zone.
+DEFAULT_TIMEZONE = "America/Chicago"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -42,6 +48,16 @@ class Settings:
     max_upload_mb: int = 12
     session_hours: int = 12
     remember_days: int = 30
+    # The household's time zone decides when a day (and its planned dinner) is over.
+    timezone: str = DEFAULT_TIMEZONE
+    # Local Ollama server for the Cooking Assistant (never exposed to browsers).
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3:1.7b"
+    ollama_timeout: float = 90.0
+
+    @property
+    def zone(self) -> ZoneInfo:
+        return ZoneInfo(self.timezone)
 
     @property
     def database_path(self) -> Path:
@@ -70,6 +86,12 @@ def load_settings() -> Settings:
     if not data_dir.is_absolute():
         data_dir = BASE_DIR / data_dir
 
+    timezone = (os.getenv("HOUSEHOLD_TIMEZONE") or DEFAULT_TIMEZONE).strip()
+    try:
+        ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise SystemExit(f"HOUSEHOLD_TIMEZONE={timezone!r} isn't a time zone name like America/Chicago.") from None
+
     return Settings(
         data_dir=data_dir,
         username=os.getenv("FAMILY_USERNAME", "").strip(),
@@ -78,4 +100,8 @@ def load_settings() -> Settings:
         max_upload_mb=int(os.getenv("MAX_UPLOAD_MB") or 12),
         session_hours=int(os.getenv("SESSION_HOURS") or 12),
         remember_days=int(os.getenv("REMEMBER_DAYS") or 30),
+        timezone=timezone,
+        ollama_url=(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434").strip().rstrip("/"),
+        ollama_model=(os.getenv("OLLAMA_MODEL") or "qwen3:1.7b").strip(),
+        ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT_SECONDS") or 90),
     )

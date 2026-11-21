@@ -4,13 +4,15 @@
 
 class LiveRegion {
   // el has data-live-url (polling endpoint) and data-version (what we're showing now).
-  constructor(el, { interval = 6000, canApply = () => true, onApply = () => {} } = {}) {
+  // `params` adds query values to each poll (the planner sends the date its board shows).
+  constructor(el, { interval = 6000, canApply = () => true, onApply = () => {}, params = () => ({}) } = {}) {
     this.el = el;
     this.url = el.dataset.liveUrl;
     this.version = Number(el.dataset.version);
     this.interval = interval;
     this.canApply = canApply;
     this.onApply = onApply;
+    this.params = params;
     this.queue = [];        // changes waiting to be saved, sent one at a time in order
     this.sending = false;
     this.latest = null;     // newest server HTML not shown yet
@@ -24,6 +26,10 @@ class LiveRegion {
     // Poll right away when the phone wakes up or the tab comes back; pause while hidden.
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) this.poll();
+    });
+    // Coming back with the Back button (or reopening the app) can show a cached copy: check it.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) this.poll();
     });
     window.addEventListener("online", () => this.flush());
     // Warn before leaving the page with changes that haven't reached the server.
@@ -42,7 +48,8 @@ class LiveRegion {
     if (this.stopped) return;
     if (!document.hidden && !this.busy) {
       try {
-        const res = await fetch(`${this.url}?since=${this.version}`, {
+        const query = new URLSearchParams({ since: String(this.version), ...this.params() });
+        const res = await fetch(`${this.url}?${query}`, {
           headers: { "X-Requested-With": "fetch" }, cache: "no-store",
         });
         if (res.redirected) return this.signedOut();

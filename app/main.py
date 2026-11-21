@@ -18,10 +18,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Project modules.
+from app import ollama
 from app.auth import LoginLimiter, LoginRequired
+from app.clock import HouseholdClock
 from app.config import BASE_DIR, Settings, load_settings
 from app.database import data_folder_lock, init_db
 from app.recipe_import import cleanup_temp_photos
+from app.meal_routes import router as meal_router
 from app.plan_routes import router as plan_router
 from app.pwa import router as pwa_router
 from app.routes import render, router
@@ -87,12 +90,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Family Table", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.login_limiter = LoginLimiter()
+    # "Today" for the planner, in the household's time zone (tests freeze it).
+    app.state.clock = HouseholdClock(settings.zone)
+    # The Cooking Assistant's model: the local Ollama server (tests swap in a stand-in).
+    app.state.ask_model = lambda messages, response_format=None: ollama.chat(settings, messages, response_format)
 
     # Make our static files accessible to the browser.
     # For example, /static/css/styles.css loads our stylesheet.
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     app.include_router(router)
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
+    app.include_router(meal_router)  # one planned dinner: servings, Add ingredients, Cooking Assistant
     app.include_router(pwa_router)   # web app manifest and service worker (home-screen install)
     # Largest photo plus 4 MB of room for the rest of the recipe form.
     app.add_middleware(BodySizeLimit, max_bytes=(settings.max_upload_mb + 4) * 1024 * 1024)

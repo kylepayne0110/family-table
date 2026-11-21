@@ -23,6 +23,12 @@ services:
       # forwarder, fed only by 127.0.0.1). Only it may say which address a visitor really
       # has, so login throttling sees visitors, not Docker. Same rule as scripts/serve.sh.
       FORWARDED_ALLOW_IPS: 10.89.42.1
+      # Cooking Assistant: Ollama runs on this computer, outside the container.
+      OLLAMA_URL: ${OLLAMA_URL_DOCKER:-http://host.docker.internal:11434}
+
+    # Lets the container reach Ollama on the host by name (Docker Desktop provides it already).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
     # Only this computer can connect (127.0.0.1), never the home network.
     ports:

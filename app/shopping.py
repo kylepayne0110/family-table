@@ -13,10 +13,15 @@ from datetime import date
 from app.database import write_transaction
 
 # Ingredient combining and name matching.
-from app.ingredients import combine, matches_staple, name_key, needs_more
+from app.ingredients import (
+    format_quantity, matches_staple, name_key, needs_more, parse_line, quantity_totals,
+)
 
-# Plan helpers: which meals are planned, and their fingerprint.
-from app.planner import ensure_week, plan_signature, planned_ingredient_lines
+# Plan helpers: the week row and one planned dinner.
+from app.planner import ensure_week, get_meal
+
+# The same serving math the recipe view and the assistant use.
+from app.scaling import scale_ingredients, servings_factor
 
 
 STATUSES = ("need", "bought", "have", "staple")
@@ -65,30 +70,17 @@ def list_state(conn: sqlite3.Connection, week: date) -> dict:
         item["display_qty"] = " + ".join(q for q in (item["quantity"], item["manual_qty"]) if q)
         sections[item["status"]].append(item)
 
-    has_list = meta is not None and meta["list_signature"] is not None
-    # Items flagged by an older version of the app are cleaned up by the next Update.
-    legacy_stale = any(i["stale"] for i in items)
     return {
         "sections": sections,
         "need_count": len(sections["need"]),
         "bought_count": len(sections["bought"]),
         "shopping_total": len(sections["need"]) + len(sections["bought"]),
         "total": len(items),   # includes cleared items, so a fully shopped list isn't "empty"
-        "has_list": has_list,
         "version": meta["list_version"] if meta else 0,
-        "out_of_date": has_list and (legacy_stale or meta["list_signature"] != plan_signature(conn, week)),
     }
 
 
-def list_status(conn: sqlite3.Connection, week: date) -> str:
-    """'none', 'current', or 'outdated' (the plan changed since the list was built)."""
-    row = conn.execute("SELECT list_signature FROM week_plans WHERE week_start = ?", (week.isoformat(),)).fetchone()
-    if row is None or row["list_signature"] is None:
-        return "none"
-    return "current" if row["list_signature"] == plan_signature(conn, week) else "outdated"
-
-
-# ---- Generating and updating ----
+# ---- Shared helpers for list changes ----
 
 def _bump_list(conn: sqlite3.Connection, week: date) -> None:
     conn.execute(
@@ -97,107 +89,174 @@ def _bump_list(conn: sqlite3.Connection, week: date) -> None:
     )
 
 
-def _replace_sources(conn: sqlite3.Connection, item_id: int, sources) -> None:
-    conn.execute("DELETE FROM shopping_item_sources WHERE item_id = ?", (item_id,))
-    conn.executemany(
-        "INSERT INTO shopping_item_sources (item_id, recipe_id, recipe_name, amount, times) VALUES (?, ?, ?, ?, ?)",
-        [(item_id, s.recipe_id, s.recipe_name, s.amount, s.times) for s in sources],
-    )
+# ---- Adding one planned dinner's ingredients ----
+
+def _staple_keys(conn: sqlite3.Connection) -> set[str]:
+    return {row[0] for row in conn.execute("SELECT name_key FROM staples")}
 
 
-def _source_rows(conn: sqlite3.Connection, item_id: int) -> list[tuple]:
-    return [tuple(r) for r in conn.execute(
-        "SELECT recipe_id, recipe_name, amount, times FROM shopping_item_sources WHERE item_id = ? ORDER BY rowid",
-        (item_id,),
+def meal_lines(conn: sqlite3.Connection, meal: dict) -> list[dict]:
+    """The dinner's ingredients at its current serving count (what the checklist and chat show)."""
+    rows = conn.execute(
+        "SELECT id, amount, name FROM ingredients WHERE recipe_id = ? ORDER BY position", (meal["recipe_id"],)
+    ).fetchall()
+    return scale_ingredients(rows, servings_factor(meal["servings"], meal["recipe_servings"]))
+
+
+def _meal_sources(conn: sqlite3.Connection, meal_id: int) -> list[dict]:
+    return [dict(r) for r in conn.execute(
+        """SELECT s.ingredient, s.amount, s.servings, i.name AS item_name, i.status, i.cleared
+           FROM shopping_item_sources s JOIN shopping_items i ON i.id = s.item_id
+           WHERE s.meal_id = ? ORDER BY s.rowid""",
+        (meal_id,),
     )]
 
 
-def generate_list(conn: sqlite3.Connection, week: date) -> dict:
-    """Build or update a week's list so it matches the meal plan, without losing anyone's progress.
+def meal_checklist(conn: sqlite3.Connection, meal: dict) -> dict:
+    """What "Add ingredients" shows for one dinner.
 
-    - New ingredients are added (staples go straight to the Kitchen Staples section).
-    - Existing items keep their id and status (including cleared purchases); quantities and
-      sources are refreshed. If a purchased item now needs more than was bought, it goes
-      back to Need to Buy with a note.
-    - Ingredients no planned recipe needs any more are removed.
-    - Hand-added items are always kept. Running it twice changes nothing the second time.
+    Regular ingredients start checked; Kitchen Staples and anything this dinner already put
+    on the list start unchecked. `outdated` is True when servings changed after adding.
     """
-    w = week.isoformat()
-    # The write lock is taken first, so two phones pressing Update can't interleave.
-    with write_transaction(conn):
-        ensure_week(conn, week)
-        first_time = conn.execute(
-            "SELECT list_signature IS NULL FROM week_plans WHERE week_start = ?", (w,)
-        ).fetchone()[0]
-        desired = combine(planned_ingredient_lines(conn, week))
-        staple_keys = {row[0] for row in conn.execute("SELECT name_key FROM staples")}
-        existing = {row["item_key"]: dict(row) for row in conn.execute(
-            """SELECT i.*, (SELECT COUNT(*) FROM shopping_item_sources s WHERE s.item_id = i.id) AS source_count
-               FROM shopping_items i WHERE i.week_start = ?""",
-            (w,),
-        )}
-        summary = {"added": 0, "staples": 0, "changed": 0, "removed": 0, "first": bool(first_time)}
+    staples = _staple_keys(conn)
+    added: dict[str, list[dict]] = {}
+    for src in _meal_sources(conn, meal["id"]):
+        added.setdefault(src["ingredient"], []).append(src)
+    lines = meal_lines(conn, meal)
+    for line in lines:
+        keys = [p.key for p in parse_line(line["amount"], line["name"])]
+        line["staple"] = bool(keys) and all(matches_staple(k, staples) for k in keys)
+        line["added"] = added.get(line["original_name"], [])
+        line["added_amount"] = " + ".join(dict.fromkeys(a["amount"] for a in line["added"] if a["amount"]))
+        line["outdated"] = any(a["servings"] != meal["servings"] for a in line["added"])
+        line["checked"] = not line["staple"] and not line["added"]
+    return {
+        "lines": lines,
+        "selected": sum(1 for line in lines if line["checked"]),
+        "outdated": any(line["outdated"] for line in lines),
+        "added_count": sum(1 for line in lines if line["added"]),
+        "added_servings": next((a["servings"] for line in lines for a in line["added"]), None),
+    }
 
-        for key, item in desired.items():
-            totals = json.dumps(item.totals, sort_keys=True)
-            row = existing.get(key)
+
+def _amount_parts(amount: str, name: str):
+    """Parsed pieces of a source amount; '1/4 cup + 2 tbsp' is read as two pieces."""
+    pieces = [piece for piece in amount.split(" + ")] if " + " in amount else [amount]
+    return [p for piece in pieces for p in parse_line(piece, name)]
+
+
+def _recalculate(conn: sqlite3.Connection, item_id: int, key: str, item_name: str) -> tuple[str, dict]:
+    """An item's quantity and totals from every recipe amount that asked for it."""
+    parts = []
+    for src in conn.execute(
+        "SELECT amount, ingredient, times FROM shopping_item_sources WHERE item_id = ? ORDER BY rowid", (item_id,)
+    ):
+        parsed = _amount_parts(src["amount"], src["ingredient"] or item_name)
+        matching = [p for p in parsed if p.key == key] or parsed[:1]
+        parts.extend(p for p in matching for _ in range(src["times"]))
+    return format_quantity(parts), quantity_totals(parts)
+
+
+def _apply_meal_lines(conn: sqlite3.Connection, meal: dict, lines: list[dict]) -> list[str]:
+    """Put these scaled lines from one dinner on its week's list. Returns the item names touched.
+
+    Each dinner's amount for an ingredient replaces what that dinner added before (it never
+    stacks), so the same selection can't double an item. Other dinners' amounts, purchases,
+    and hand-added items are kept.
+    """
+    w = meal["week_start"]
+    names = []
+    for line in lines:
+        for parsed in parse_line(line["amount"], line["name"]):
+            row = conn.execute("SELECT * FROM shopping_items WHERE week_start = ? AND item_key = ?",
+                               (w, parsed.key)).fetchone()
             if row is None:
-                status = "staple" if matches_staple(key, staple_keys) else "need"
-                cur = conn.execute(
-                    """INSERT INTO shopping_items (week_start, item_key, name, quantity, totals_json, status)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (w, key, item.display[:MAX_NAME], item.quantity, totals, status),
-                )
-                _replace_sources(conn, cur.lastrowid, item.sources)
-                summary["staples" if status == "staple" else "added"] += 1
-                continue
-
-            new_sources = [(s.recipe_id, s.recipe_name, s.amount, s.times) for s in item.sources]
-            status, note, cleared = row["status"], row["change_note"], row["cleared"]
-            quantity_changed = row["totals_json"] != totals or row["quantity"] != item.quantity
-            if quantity_changed and row["source_count"]:
-                if row["quantity"]:
-                    note = f"Was {row['quantity']}, now {item.quantity or 'some'}"
-                # Compare with what was actually bought, so "less, then back to the same" isn't bought twice.
-                bought = json.loads(row["bought_totals"] or row["totals_json"])
-                if status == "bought" and needs_more(bought, item.totals):
-                    # Don't assume what was bought covers the bigger amount (even if it was cleared).
-                    status, cleared = "need", 0
-                    note = f"Need more: was {row['quantity'] or 'some'}, now {item.quantity}"
-            if quantity_changed or row["stale"] or new_sources != _source_rows(conn, row["id"]):
-                conn.execute(
-                    """UPDATE shopping_items SET quantity = ?, totals_json = ?, status = ?, change_note = ?,
-                           cleared = ?, stale = 0, rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
-                    (item.quantity, totals, status, note, cleared, row["id"]),
-                )
-                _replace_sources(conn, row["id"], item.sources)
-                summary["changed"] += 1
-
-        for key, row in existing.items():
-            if key in desired or not row["source_count"]:
-                continue  # still needed, or never came from a recipe (hand-added)
-            if row["manual"]:
-                # Someone also added it by hand, so it stays; it just isn't from a recipe now.
-                conn.execute("DELETE FROM shopping_item_sources WHERE item_id = ?", (row["id"],))
-                conn.execute(
-                    """UPDATE shopping_items SET quantity = '', totals_json = '{}', change_note = '',
-                           rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
-                    (row["id"],),
-                )
-                summary["changed"] += 1
+                item_id = conn.execute(
+                    "INSERT INTO shopping_items (week_start, item_key, name, status) VALUES (?, ?, ?, 'need')",
+                    (w, parsed.key, (parsed.display[:1].upper() + parsed.display[1:])[:MAX_NAME]),
+                ).lastrowid
+                item_name = parsed.display
             else:
-                # Only a recipe needed it, and no planned recipe does now: it leaves the list,
-                # whatever its section (its sources go with it via ON DELETE CASCADE).
-                conn.execute("DELETE FROM shopping_items WHERE id = ?", (row["id"],))
-                summary["removed"] += 1
+                item_id, item_name = row["id"], row["name"]
+            conn.execute("DELETE FROM shopping_item_sources WHERE item_id = ? AND meal_id = ? AND ingredient = ?",
+                         (item_id, meal["id"], line["original_name"]))
+            conn.execute(
+                """INSERT INTO shopping_item_sources (item_id, recipe_id, recipe_name, amount, times, meal_id,
+                       ingredient, servings) VALUES (?, ?, ?, ?, 1, ?, ?, ?)""",
+                (item_id, meal["recipe_id"], meal["recipe_name"], line["amount"], meal["id"],
+                 line["original_name"], meal["servings"]),
+            )
+            quantity, totals = _recalculate(conn, item_id, parsed.key, item_name)
+            status, cleared, note = "need", 0, ""
+            if row is not None:
+                status, cleared, note = row["status"], row["cleared"], row["change_note"]
+                if status == "staple":
+                    status = "need"        # chosen on purpose, so it goes on Need to Buy
+                elif status in ("bought", "have") or cleared:
+                    basis = json.loads(row["bought_totals"] or row["totals_json"] or "{}")
+                    if needs_more(basis, totals):
+                        status, cleared = "need", 0
+                        note = f"Need more: was {row['quantity'] or 'some'}, now {quantity or 'some'}"
+            conn.execute(
+                """UPDATE shopping_items SET quantity = ?, totals_json = ?, status = ?, cleared = ?, change_note = ?,
+                       stale = 0, rev = rev + 1, updated_at = datetime('now') WHERE id = ?""",
+                (quantity, json.dumps(totals, sort_keys=True), status, cleared, note, item_id),
+            )
+            names.append(item_name[:1].upper() + item_name[1:])
+    return list(dict.fromkeys(names))
 
-        conn.execute(
-            "UPDATE week_plans SET list_signature = ?, list_built_at = datetime('now') WHERE week_start = ?",
-            (plan_signature(conn, week), w),
-        )
-        if first_time or any(summary[k] for k in ("added", "staples", "changed", "removed")):
-            _bump_list(conn, week)
-    return summary
+
+def _seen_request(conn: sqlite3.Connection, request_key: str | None, meal_id: int) -> bool:
+    """True if this exact request was already applied; otherwise remember it."""
+    if not request_key:
+        return False
+    if conn.execute("SELECT 1 FROM meal_list_requests WHERE request_key = ?", (request_key,)).fetchone():
+        return True
+    conn.execute("INSERT INTO meal_list_requests (request_key, meal_id) VALUES (?, ?)", (request_key, meal_id))
+    return False
+
+
+def add_meal_ingredients(conn: sqlite3.Connection, meal_id: int, indexes: list[int],
+                         request_key: str | None, servings_seen: int | None = None) -> dict:
+    """Add the chosen ingredients of one planned dinner to that week's shared list.
+
+    `request_key` comes from the checklist form: a double tap or a retried request with the
+    same key changes nothing the second time. `servings_seen` is the serving count the
+    checklist showed; if it changed meanwhile, nothing is added and the caller shows the new amounts.
+    """
+    with write_transaction(conn):
+        meal = get_meal(conn, meal_id)
+        if meal is None:
+            raise Missing("That dinner isn't on the plan anymore.")
+        if _seen_request(conn, request_key, meal_id):
+            return {"duplicate": True, "names": []}
+        if servings_seen is not None and servings_seen != meal["servings"]:
+            raise Conflict("The serving count just changed, so here are the new amounts. Check them and add again.")
+        lines = meal_lines(conn, meal)
+        chosen = [lines[i] for i in dict.fromkeys(indexes) if 0 <= i < len(lines)]
+        if not chosen:
+            raise ListError("Choose at least one ingredient to add.")
+        ensure_week(conn, meal["week"])
+        names = _apply_meal_lines(conn, meal, chosen)
+        _bump_list(conn, meal["week"])
+    return {"duplicate": False, "names": names}
+
+
+def update_meal_ingredients(conn: sqlite3.Connection, meal_id: int, request_key: str | None) -> dict:
+    """After a serving change: bring this dinner's amounts on the list up to date (only when asked)."""
+    with write_transaction(conn):
+        meal = get_meal(conn, meal_id)
+        if meal is None:
+            raise Missing("That dinner isn't on the plan anymore.")
+        if _seen_request(conn, request_key, meal_id):
+            return {"duplicate": True, "names": []}
+        added = {src["ingredient"] for src in _meal_sources(conn, meal_id)}
+        chosen = [line for line in meal_lines(conn, meal) if line["original_name"] in added]
+        if not chosen:
+            raise ListError("Nothing from this dinner is on the shopping list yet.")
+        names = _apply_meal_lines(conn, meal, chosen)
+        _bump_list(conn, meal["week"])
+    return {"duplicate": False, "names": names}
 
 
 # ---- Changing items ----

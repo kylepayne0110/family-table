@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 # Project modules.
 from app.main import create_app
 from tests.conftest import create_recipe, login, make_image, recipe_id_from
-from tests.plan_helpers import FETCH, TACOS, W, add_recipe, all_items, item, plan, post, query, token
+from tests.plan_helpers import FETCH, TACOS, W, add_recipe, all_items, item, plan, post, query, shop_week, token
 
 
 GET_PAGES = [
@@ -18,7 +18,7 @@ GET_PAGES = [
     "/shopping", f"/shopping?week={W}", f"/shopping/{W}/live", "/staples",
 ]
 POSTS = [
-    f"/plan/{W}/day/0", f"/plan/{W}/day/0/clear", f"/plan/{W}/move", f"/plan/{W}/shopping-list",
+    f"/plan/{W}/day/0", f"/plan/{W}/day/0/clear", f"/plan/{W}/move",
     f"/shopping/{W}/items", f"/shopping/{W}/items/1/status", f"/shopping/{W}/items/1/edit",
     f"/shopping/{W}/items/1/delete", f"/shopping/{W}/items/1/staple", f"/shopping/{W}/clear-purchased",
     "/staples", "/staples/1/edit", "/staples/1/delete", "/staples/1/list",
@@ -41,7 +41,7 @@ def test_actions_require_sign_in(client, url):
 def test_actions_require_csrf(auth_client, settings, url):
     rid = add_recipe(settings, "Tacos", TACOS)
     plan(auth_client, 0, rid)
-    post(auth_client, f"/plan/{W}/shopping-list")
+    shop_week(auth_client, settings)
     before = (query(settings, "SELECT * FROM planned_meals"), query(settings, "SELECT * FROM shopping_items"),
               query(settings, "SELECT * FROM staples"))
     data = {"name": "Hacked", "status": "bought", "recipe_id": str(rid), "rev": "1", "choice": "remove",
@@ -68,8 +68,11 @@ def test_user_text_is_escaped(auth_client, settings):
     rid = add_recipe(auth_client.app.state.settings, evil, [("1", evil)])
     plan(auth_client, 0, rid)
     assert evil not in auth_client.get(f"/plan?week={W}").text
-    post(auth_client, f"/plan/{W}/shopping-list")
+    shop_week(auth_client, auth_client.app.state.settings)
     assert evil not in auth_client.get(f"/shopping?week={W}").text
+    mid = query(auth_client.app.state.settings, "SELECT id FROM planned_meals")[0][0]
+    assert evil not in auth_client.get(f"/plan/meals/{mid}").text
+    assert evil not in auth_client.get(f"/plan/meals/{mid}/ingredients").text
 
 
 def test_long_input_is_trimmed(auth_client, settings):
@@ -122,12 +125,11 @@ def test_planner_and_list_never_change_recipe_data(auth_client, settings):
     plan(auth_client, 0, rid)
     plan(auth_client, 1, other)
     post(auth_client, f"/plan/{W}/move", {"from_day": 0, "to_day": 1})
-    post(auth_client, f"/plan/{W}/shopping-list")
+    shop_week(auth_client, settings)
     post(auth_client, f"/shopping/{W}/items", {"name": "Milk"})
     it = item(settings, "Ground beef")
     post(auth_client, f"/shopping/{W}/items/{it['id']}/status", {"status": "bought", "rev": it["rev"]})
     post(auth_client, f"/plan/{W}/day/1/clear")
-    post(auth_client, f"/plan/{W}/shopping-list")
     post(auth_client, f"/shopping/{W}/clear-purchased")
 
     assert snapshot(settings) == before

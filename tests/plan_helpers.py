@@ -1,5 +1,9 @@
 # Shared helpers for the meal planner and shopping list tests.
 
+# re reads the checklist form; uuid makes request keys.
+import re
+import uuid
+
 # date fixes the week under test so results don't depend on today.
 from datetime import date
 
@@ -42,8 +46,42 @@ def plan(client, day: int, recipe_id: int, week: str = W):
     return post(client, f"/plan/{week}/day/{day}", {"recipe_id": recipe_id})
 
 
-def generate(client, week: str = W):
-    return post(client, f"/plan/{week}/shopping-list")
+def meal_id(settings, day: int, week: str = W) -> int:
+    rows = query(settings, "SELECT id FROM planned_meals WHERE week_start = ? AND day = ?", (week, day))
+    assert rows, f"nothing planned on day {day} of {week}"
+    return rows[0][0]
+
+
+def checklist(client, mid: int) -> str:
+    """The "Add ingredients" checklist HTML for a planned dinner."""
+    return client.get(f"/plan/meals/{mid}/ingredients", headers=FETCH).json()["html"]
+
+
+def checked(html: str) -> list[int]:
+    """Indexes the checklist starts checked (regular ingredients, not staples or already added)."""
+    return [int(v) for v in re.findall(r'name="ingredient" value="(\d+)" checked', html)]
+
+
+def add_ingredients(client, settings, day: int, indexes: list[int] | None = None, week: str = W,
+                    key: str | None = None, fetch: bool = True, servings_seen: int | None = None):
+    """Tap "Add N items" for one dinner. Default: whatever the checklist starts checked."""
+    mid = meal_id(settings, day, week)
+    html = checklist(client, mid)
+    if indexes is None:
+        indexes = checked(html)
+    if servings_seen is None:
+        found = re.search(r'name="servings_seen" value="(\d*)"', html).group(1)
+        servings_seen = int(found) if found else None
+    data = {"ingredient": [str(i) for i in indexes], "request_key": key or uuid.uuid4().hex}
+    if servings_seen is not None:
+        data["servings_seen"] = str(servings_seen)
+    return post(client, f"/plan/meals/{mid}/ingredients", data, fetch=fetch)
+
+
+def shop_week(client, settings, week: str = W):
+    """Add each planned dinner's default checklist, Monday to Sunday."""
+    for (day,) in query(settings, "SELECT day FROM planned_meals WHERE week_start = ? ORDER BY day", (week,)):
+        add_ingredients(client, settings, day, week=week)
 
 
 def state(settings, week: date = WEEK) -> dict:

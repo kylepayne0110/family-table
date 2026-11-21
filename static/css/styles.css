@@ -1514,25 +1514,27 @@ code {
     list-style: none;
 }
 
-.list-panel {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px 32px;
+/* Past days: the slot is clear; the dinner moves to "Earlier this week". */
+.day-card.is-past { opacity: 0.7; }
+.day-card.is-past .day-card__blank { margin-left: 0; }
+
+.day-card__time span { display: inline-flex; align-items: center; gap: 5px; }
+.day-card__serves { padding: 0 6px; border: 1px solid var(--border); font-weight: 600; color: var(--body-text); }
+.day-card__add-ingredients { justify-self: start; margin: 10px 0 2px 78px; }
+
+.plan-history {
     margin-top: 28px;
-    padding: 22px 24px;
+    padding: 18px 22px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-top: 2px solid var(--rule-red);
 }
-.list-panel.is-outdated { border-color: var(--accent); border-top-color: var(--accent); background: #FBF1EA; }
-.list-panel__text { flex: 1 1 320px; }
-.list-panel__title { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-family: var(--font-heading); font-size: 22px; color: var(--text); }
-.list-panel__title .icon { color: var(--accent); }
-.list-panel__text p:not(.list-panel__title) { font-size: 15px; }
-.list-panel__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
-.list-panel__hint { font-size: 14px; color: var(--muted); }
+.plan-history__title { margin-bottom: 8px; font-size: 22px; }
+.plan-history__list { list-style: none; margin: 0; padding: 0; }
+.plan-history__list li { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 0; border-top: 1px dashed var(--border); }
+.plan-history__list li:first-child { border-top: 0; }
+.plan-history__day { min-width: 130px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.plan-shop-link { margin-top: 24px; }
 
 /* Desktop: the full week side by side, like a dinner board. */
 @media (min-width: 1100px) {
@@ -1543,6 +1545,7 @@ code {
     .day-card__day { font-family: var(--font-body); font-size: 12.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
     .day-card__date { font-family: var(--font-heading); font-size: 26px; font-weight: 400; letter-spacing: -0.01em; text-transform: none; color: var(--text); }
     .day-card__tonight { position: absolute; top: 30px; right: 0; font-size: 18px; }
+    .day-card__add-ingredients { margin-left: 0; justify-self: stretch; }
     .day-card__slot { display: flex; flex: 1; flex-direction: column; }
     .day-card__meal { grid-template-columns: minmax(0, 1fr); gap: 10px; }
     .day-card__photo { width: 100%; aspect-ratio: 4 / 3; }
@@ -1917,3 +1920,182 @@ body {
 .offline-card p { margin-bottom: 12px; }
 .offline-card__hint { font-size: 15px; color: var(--muted); }
 .offline-card .btn { margin-top: 10px; }
+
+
+/* ==== Planned dinner: serving selector, Add ingredients, Cooking Assistant ==== */
+
+.planned__actions { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 24px; }
+.planned__fineprint { margin-top: 14px; font-size: 14px; color: var(--muted); }
+
+.servings { margin-bottom: 28px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--border); }
+.servings__form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.servings__form.is-saving { opacity: 0.6; }
+.servings__label { font-family: var(--font-heading); font-size: 21px; color: var(--text); }
+.servings__note { font-size: 14.5px; color: var(--muted); }
+.servings__note .link-button { min-height: 32px; margin-left: 6px; font-size: 14.5px; }
+.servings__form--yield { align-items: flex-start; flex-direction: column; gap: 8px; }
+.servings__yield { display: flex; gap: 10px; align-items: center; }
+
+.stepper { display: inline-flex; align-items: stretch; border: 1px solid var(--text); background: var(--surface); }
+.stepper__btn {
+    display: grid; place-items: center;
+    width: 46px; min-height: 46px;
+    border: 0; background: none; color: var(--text); cursor: pointer;
+}
+.stepper__btn:hover:not([disabled]) { background: var(--bg); color: var(--accent); }
+.stepper__btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+.stepper__input {
+    width: 64px; min-height: 46px;
+    border: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+    background: var(--surface); text-align: center; font-size: 18px; font-weight: 600;
+    -moz-appearance: textfield;
+}
+.servings__yield .stepper__input { border: 1px solid var(--text); }
+.stepper__input::-webkit-outer-spin-button, .stepper__input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* The checklist sheet: a bottom sheet on phones, a centred card on wider screens. */
+.sheet {
+    width: min(100%, 560px);
+    max-width: 100%;
+    max-height: min(88dvh, 760px);
+    margin: auto auto 0;
+    padding: 0 0 env(safe-area-inset-bottom);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-card);
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+.sheet::backdrop { background: rgba(43, 36, 32, 0.45); }
+.sheet__bar {
+    position: sticky; top: 0; z-index: 1;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 8px 6px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.sheet__label { font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.sheet__body { padding: 18px 20px 20px; }
+.sheet__loading { padding: 24px 0; color: var(--muted); }
+@media (min-width: 640px) { .sheet { margin: auto; } }
+
+.checklist__head { margin-bottom: 14px; }
+.checklist__head .eyebrow { margin-bottom: 6px; }
+.checklist__title { font-size: 26px; }
+.checklist__hint { margin-top: 6px; font-size: 14.5px; color: var(--muted); }
+.checklist__status { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; font-weight: 600; color: var(--text); }
+.checklist__status .icon { color: var(--accent); }
+.checklist__status.is-error, .checklist__error { color: var(--error); }
+.checklist__notice { display: grid; gap: 10px; margin-bottom: 14px; padding: 12px 14px; background: #FBF1EA; border: 1px solid var(--accent); }
+.checklist__notice p { font-size: 15px; }
+.checklist__notice .btn { justify-self: start; }
+.checklist__list { list-style: none; margin: 0 0 18px; padding: 0; }
+.checklist__list li { border-bottom: 1px dashed var(--border); }
+.checklist__foot { position: sticky; bottom: 0; padding: 10px 0 2px; background: var(--surface); }
+.checklist-page { margin-top: 16px; padding: 20px; background: var(--surface); border: 1px solid var(--border); }
+
+.check-row { display: flex; align-items: flex-start; gap: 14px; min-height: 52px; padding: 12px 0; cursor: pointer; }
+.check-row__input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.check-row__box {
+    flex: none; position: relative;
+    width: 24px; height: 24px; margin-top: 1px;
+    border: 1.5px solid var(--text); background: var(--surface);
+}
+.check-row__box::after {
+    content: ""; position: absolute; left: 7px; top: 2px; width: 6px; height: 12px;
+    border: solid #FFFDF8; border-width: 0 2px 2px 0; transform: rotate(45deg); opacity: 0;
+}
+.check-row__input:checked ~ .check-row__box { background: var(--accent); border-color: var(--accent); }
+.check-row__input:checked ~ .check-row__box::after { opacity: 1; }
+.check-row__input:focus-visible ~ .check-row__box { outline: 2px solid var(--accent); outline-offset: 3px; }
+.check-row__text { font-size: 17px; line-height: 1.4; color: var(--text); }
+.check-row__amount { font-weight: 600; margin-right: 4px; }
+.check-row__input:not(:checked) ~ .check-row__text { color: var(--muted); }
+
+.tag {
+    display: inline-block; margin-left: 6px; padding: 0 6px;
+    border: 1px solid var(--border); font-size: 12px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); vertical-align: 2px;
+}
+.tag--done { border-color: var(--accent); color: var(--accent); }
+
+/* The assistant: full screen over the recipe on phones (the recipe keeps its scroll
+   position underneath), a panel beside it on wide screens. */
+.assistant {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--bg);
+}
+.assistant.is-open, .assistant:target { display: flex; }
+body.assistant-open { overflow: hidden; }
+@media (min-width: 1000px) {
+    .assistant {
+        left: auto;
+        width: 440px;
+        border-left: 1px solid var(--border);
+        box-shadow: var(--shadow-card);
+    }
+    body.assistant-open { overflow: auto; }
+    body.assistant-open main { margin-right: 440px; }
+}
+.assistant__bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 6px 8px 6px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+.assistant__back { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--accent); }
+.assistant__title { font-family: var(--font-heading); font-size: 19px; color: var(--text); }
+.assistant__close { display: none; }
+@media (min-width: 1000px) {
+    .assistant__back { display: none; }
+    .assistant__close { display: grid; }
+}
+.assistant__context { padding: 8px 16px; font-size: 13.5px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.assistant__log {
+    flex: 1;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.assistant__form { padding: 10px 12px 12px; background: var(--surface); border-top: 1px solid var(--border); }
+.assistant__note { margin-bottom: 8px; font-size: 14.5px; color: var(--accent); }
+.assistant__row { display: flex; align-items: flex-end; gap: 8px; }
+.assistant__input {
+    flex: 1;
+    min-height: 46px; max-height: 140px;
+    padding: 11px 12px;
+    border: 1px solid var(--text);
+    background: var(--surface);
+    resize: none;
+    line-height: 1.4;
+}
+.assistant__mic { width: 46px; height: 46px; border: 1px solid var(--border); }
+.assistant__mic.is-listening { border-color: var(--accent); background: #FBF1EA; color: var(--accent); }
+.assistant__send { min-height: 46px; padding: 0 14px; }
+
+.chat-empty { color: var(--muted); font-size: 15px; }
+.chat-empty ul { margin: 8px 0 0; padding-left: 20px; }
+.chat-msg { max-width: 88%; padding: 10px 13px; border: 1px solid var(--border); background: var(--surface); }
+.chat-msg__body { white-space: pre-line; color: var(--text); font-size: 15.5px; line-height: 1.45; }
+.chat-msg--user { align-self: flex-end; background: var(--charcoal); border-color: var(--charcoal); }
+.chat-msg--user .chat-msg__body { color: #FFFDF8; }
+.chat-msg--assistant { align-self: flex-start; }
+.chat-msg--offline { border-color: var(--accent); background: #FBF1EA; }
+.chat-msg.is-pending { opacity: 0.65; }
+
+.proposal { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.proposal__changes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.proposal__changes li { display: grid; gap: 2px; font-size: 14.5px; }
+.proposal__where { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.proposal del { color: var(--muted); }
+.proposal ins { text-decoration: none; background: #F3E3C9; color: var(--text); }
+.proposal__actions { display: flex; gap: 8px; margin-top: 12px; }
+.proposal__actions form { margin: 0; }
+.proposal__status { margin-top: 10px; font-size: 14px; font-weight: 600; color: var(--muted); }

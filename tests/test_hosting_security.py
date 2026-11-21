@@ -32,7 +32,8 @@ def api_routes(routes):
 def all_routes(app):
     """(method, path with sample values) for every route the app defines."""
     samples = {"{recipe_id}": "1", "{note_id}": "1", "{filename}": "a" * 32 + ".webp", "{week}": "2026-11-09",
-               "{day}": "0", "{item_id}": "1", "{action}": "status", "{staple_id}": "1"}
+               "{day}": "0", "{item_id}": "1", "{action}": "status", "{staple_id}": "1",
+               "{meal_id}": "1", "{proposal_id}": "1", "{decision}": "confirm"}
     for route in api_routes(app.routes):
         path = route.path
         for key, value in samples.items():
