@@ -2,7 +2,17 @@
 // Without JavaScript the same checklist is a normal page and form.
 "use strict";
 
-document.addEventListener("DOMContentLoaded", () => {
+// Where a checklist submission goes. Only a button with its own formaction attribute (the
+// "Update list to N servings" button) overrides the form's action. Don't test
+// submitter.formAction alone: browsers return the page's own URL for a button without the
+// attribute, which sent "Add 1 item" to the planned-meal page (405) instead of the list.
+function submitUrl(form, submitter) {
+  return submitter && submitter.hasAttribute("formaction") ? submitter.formAction : form.action;
+}
+
+if (typeof module !== "undefined") module.exports = { submitUrl };   // for the regression test
+
+if (typeof document !== "undefined") document.addEventListener("DOMContentLoaded", () => {
   const dialog = document.querySelector("[data-checklist-dialog]");
   const sheetBody = dialog ? dialog.querySelector("[data-checklist-body]") : null;
 
@@ -64,8 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!form) return;
     event.preventDefault();
     if (form.dataset.busy) return;            // a double tap while sending does nothing
-    const submitter = event.submitter;
-    const url = submitter && submitter.formAction ? submitter.formAction : form.action;
+    const url = submitUrl(form, event.submitter);
     const button = form.querySelector("[data-checklist-submit]");
     const label = form.querySelector("[data-checklist-label]");
     form.dataset.busy = "1";
