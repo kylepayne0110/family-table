@@ -25,6 +25,7 @@ from app.config import BASE_DIR, Settings, load_settings
 from app.database import data_folder_lock, init_db
 from app.recipe_import import cleanup_temp_photos
 from app.meal_routes import router as meal_router
+from app.packaged_routes import router as packaged_router
 from app.plan_routes import router as plan_router
 from app.pwa import router as pwa_router
 from app.routes import render, router
@@ -101,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
     app.include_router(meal_router)  # one planned dinner: servings, Add ingredients, Cooking Assistant
+    app.include_router(packaged_router)  # scan a packaged meal for one dinner
     app.include_router(pwa_router)   # web app manifest and service worker (home-screen install)
     # Largest photo plus 4 MB of room for the rest of the recipe form.
     app.add_middleware(BodySizeLimit, max_bytes=(settings.max_upload_mb + 4) * 1024 * 1024)

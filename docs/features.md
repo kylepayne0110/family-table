@@ -6,6 +6,7 @@ Detailed notes on the main features. The [README](../README.md) has the overview
 - [Importing recipes from websites](#importing-recipes-from-websites)
 - [Meal Planner and Shopping List](#meal-planner-and-shopping-list)
 - [Planned dinners: servings and the Cooking Assistant](#planned-dinners-servings-and-the-cooking-assistant)
+- [Packaged meals](#packaged-meals)
 - [Sharing a list between phones](#sharing-a-list-between-phones)
 - [iPhone app (Progressive Web App)](#iphone-app-progressive-web-app)
 - [Security](#security)
@@ -83,6 +84,19 @@ The app owns the calculations and every database write. These requests are under
 
 Everything else goes to the local Ollama model (`OLLAMA_MODEL`, default `qwen3:1.7b`) with the recipe name, yields, tonight's scaled ingredients, and the scaled steps in the prompt. There is no RAG, embeddings, or vector database. The model replies in JSON and may only *propose* an action (change servings, propose an edit, ask a question); the app validates it before doing anything. If Ollama is offline, the assistant says so and the recipe, serving selector, and checklist keep working.
 
+## Packaged meals
+
+For a store-bought dinner (a frozen meal from Walmart, say). Open a day in the Meal Planner and tap **Scan a packaged meal** (also on the recipe picker, and **Scan instead** on a planned day).
+
+1. **Find the product.** **Scan the barcode** uses the phone camera; the browser's built-in barcode reader is used where it exists (Chrome on Android) and the vendored ZXing library elsewhere (iPhone Safari). **Take a photo of the barcode** reads it from a still photo. You can also type the digits under the barcode, or skip it and type the meal's name. Digits are checked (UPC-A, EAN-13, EAN-8, and UPC-E, which is expanded to UPC-A).
+2. **Lookup.** The server (never the browser) asks [Open Food Facts](https://world.openfoodfacts.org) for that barcode: free, no key or account. The name, brand, and package size are shown so a wrong match is easy to spot, and every field can be corrected. Unknown barcodes and lookup outages still let you add the meal by name. Successful lookups are cached in memory for a day.
+3. **Directions.** Only the package's own words are used. If Open Food Facts has preparation text, it's copied word for word and split into **Oven** and **Microwave** only where the text has those headings, and labelled as coming from Open Food Facts. Edited or typed directions are labelled as typed by the family. Nothing (including AI) fills in temperatures, times, or steps. You can attach a photo of the box's cooking panel (taken now or chosen from the photo library), kept large enough to read and shown tap-to-enlarge, and add or fix directions later from the planned meal.
+4. **Add to the day.** It becomes that day's planned dinner, visible on both phones, and stays in **Earlier this week** after the day passes, like any dinner. If the day already has a dinner, the page says so and replaces it only when you tick **Replace …**; a confirmation made before another phone changed the day doesn't count. The shopping list and recipe box are never touched. Removing or replacing the meal deletes its label photo.
+
+**What Open Food Facts actually has (checked November 2026).** For U.S. frozen meals it reliably returns the product name and brand and usually the package size (sometimes in grams, sometimes missing). Of 100 U.S. "frozen meals" records surveyed, none had preparation text, so in practice the cooking directions come from a label photo or typing. Its U.S. coverage of frozen meals is incomplete (246 products in that category), and community-entered data can be wrong (the textbook example barcode 012345678905 is listed as a jar of cactus), which is why the review step comes before saving.
+
+**Camera access** needs a secure page: the HTTPS (Funnel) address, or `localhost`. On plain `http://` over the home network, live scanning is hidden and the barcode photo, typed digits, and name still work.
+
 ## Sharing a list between phones
 
 Each open list asks the server "anything new?" every 5 seconds (8 on the planner) and pauses while the tab is hidden. The check is one small query, and the list is re-sent only when its version number has changed.
@@ -145,6 +159,7 @@ To back up or move to another computer, copy both while the server is stopped, o
 - Ingredient matching is deliberately cautious, so near-matches with different wording can appear as two lines rather than being wrongly merged.
 - Mixed volume totals are written exactly ("1 1/2 cups + 2 tsp") rather than rounded. Items aren't grouped by store aisle.
 - List changes reach the other phone within about 5 seconds, not instantly.
+- Packaged-meal directions depend on the box: Open Food Facts rarely has them for U.S. frozen meals. Label photos are shown as photos; the text in them isn't read or searchable.
 - The Cooking Assistant's permanent edits are word substitutions ("use X instead of Y"). Other recipe changes go through **Edit recipe**.
 - A small local model can misread open-ended questions; amounts, conversions, and serving changes come from the app, not the model.
 - Voice input uses the browser's speech recognition (Safari sends audio to Apple for transcription). Browsers without it show only the text box.

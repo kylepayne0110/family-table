@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 # Project modules.
 from app import auth, planner, shopping
 from app.database import get_db
+from app.images import delete_photo
 from app.routes import redirect, render, templates
 
 
@@ -164,7 +165,8 @@ async def plan_set(request: Request, week: str, day: int,
     try:
         if recipe_id is None:
             raise planner.PlanError("Choose a recipe first.")
-        planner.set_meal(conn, wk, day, recipe_id, today)
+        for photo in planner.set_meal(conn, wk, day, recipe_id, today):
+            delete_photo(request.app.state.settings.upload_dir, photo)   # a replaced packaged meal's label
     except planner.PlanError as exc:
         return _plan_done(request, conn, wk, session, error=str(exc), status_code=422)
     return _plan_done(request, conn, wk, session, anchor=f"#day-{day}")
@@ -178,7 +180,8 @@ async def plan_clear(request: Request, week: str, day: int,
     today = household_today(request)
     wk = _week(week, today)
     try:
-        planner.clear_meal(conn, wk, day, today)
+        for photo in planner.clear_meal(conn, wk, day, today):
+            delete_photo(request.app.state.settings.upload_dir, photo)
     except planner.PlanError as exc:
         return _plan_done(request, conn, wk, session, error=str(exc), status_code=422)
     return _plan_done(request, conn, wk, session, anchor=f"#day-{day}")

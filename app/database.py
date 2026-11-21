@@ -84,13 +84,35 @@ CREATE TABLE IF NOT EXISTS week_plans (
 -- shopping additions, and assistant chat move with it. At most one dinner per day:
 -- the planner checks that inside a write transaction (a UNIQUE index would block swaps).
 -- Rows for past days are kept as the family's history.
+-- recipe_id is NULL for a scanned packaged meal (its details live in packaged_meals).
 CREATE TABLE IF NOT EXISTS planned_meals (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     week_start TEXT    NOT NULL REFERENCES week_plans(week_start) ON DELETE CASCADE,
     day        INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
-    recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+    recipe_id  INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
     servings   INTEGER CHECK (servings IS NULL OR servings BETWEEN 1 AND 100),  -- NULL = the recipe's own yield
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A store-bought meal planned for one dinner (scanned or typed in). It belongs to that
+-- planned dinner only and never becomes a recipe in the recipe box.
+CREATE TABLE IF NOT EXISTS packaged_meals (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    meal_id              INTEGER NOT NULL UNIQUE REFERENCES planned_meals(id) ON DELETE CASCADE,
+    barcode              TEXT    NOT NULL DEFAULT '' CHECK (barcode = '' OR barcode NOT GLOB '*[^0-9]*'),
+    name                 TEXT    NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+    brand                TEXT    NOT NULL DEFAULT '',
+    package_size         TEXT    NOT NULL DEFAULT '',
+    product_source       TEXT    NOT NULL DEFAULT 'manual',  -- 'openfoodfacts' or 'manual'
+    oven_directions      TEXT    NOT NULL DEFAULT '',
+    oven_source          TEXT    NOT NULL DEFAULT '',        -- 'openfoodfacts', 'typed', or ''
+    microwave_directions TEXT    NOT NULL DEFAULT '',
+    microwave_source     TEXT    NOT NULL DEFAULT '',
+    other_directions     TEXT    NOT NULL DEFAULT '',
+    other_source         TEXT    NOT NULL DEFAULT '',
+    label_photo          TEXT,                                -- photo of the cooking panel (uploads/)
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 -- One line on a week's shopping list. item_key is the normalized name, so the
@@ -238,9 +260,13 @@ def upgrade_planned_meals(conn: sqlite3.Connection) -> None:
 
     Runs before SCHEMA so tables that refer to planned_meals(id) are created afterwards.
     """
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(planned_meals)")}
-    if not columns or "id" in columns:
-        return   # brand-new database, or already upgraded
+    columns = {row["name"]: row for row in conn.execute("PRAGMA table_info(planned_meals)")}
+    if not columns:
+        return   # brand-new database
+    if "id" in columns:
+        if columns["recipe_id"]["notnull"]:
+            allow_packaged_meals(conn)
+        return
     conn.execute("BEGIN IMMEDIATE")
     try:
         conn.execute("DROP TABLE IF EXISTS planned_meals_upgrade")
@@ -249,7 +275,7 @@ def upgrade_planned_meals(conn: sqlite3.Connection) -> None:
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 week_start TEXT    NOT NULL REFERENCES week_plans(week_start) ON DELETE CASCADE,
                 day        INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
-                recipe_id  INTEGER NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+                recipe_id  INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
                 servings   INTEGER CHECK (servings IS NULL OR servings BETWEEN 1 AND 100),
                 created_at TEXT    NOT NULL DEFAULT (datetime('now'))
             )""")
@@ -261,6 +287,42 @@ def upgrade_planned_meals(conn: sqlite3.Connection) -> None:
     except BaseException:
         conn.rollback()
         raise
+
+
+def allow_packaged_meals(conn: sqlite3.Connection) -> None:
+    """Let a planned dinner have no recipe (a scanned packaged meal). Every row and id is kept.
+
+    SQLite can't drop NOT NULL in place, so the table is copied. Foreign keys are switched
+    off for the copy so the rows that point at planned dinners (servings, chats, shopping
+    sources) aren't deleted along with the old table; they're checked again afterwards.
+    """
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("DROP TABLE IF EXISTS planned_meals_upgrade")
+            conn.execute("""
+                CREATE TABLE planned_meals_upgrade (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    week_start TEXT    NOT NULL REFERENCES week_plans(week_start) ON DELETE CASCADE,
+                    day        INTEGER NOT NULL CHECK (day BETWEEN 0 AND 6),
+                    recipe_id  INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
+                    servings   INTEGER CHECK (servings IS NULL OR servings BETWEEN 1 AND 100),
+                    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+                )""")
+            conn.execute("""INSERT INTO planned_meals_upgrade (id, week_start, day, recipe_id, servings, created_at)
+                            SELECT id, week_start, day, recipe_id, servings, created_at FROM planned_meals""")
+            conn.execute("DROP TABLE planned_meals")
+            conn.execute("ALTER TABLE planned_meals_upgrade RENAME TO planned_meals")
+            problems = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if problems:
+                raise RuntimeError(f"Database upgrade stopped: {len(problems)} broken references.")
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 def migrate(conn: sqlite3.Connection) -> None:

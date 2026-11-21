@@ -32,7 +32,9 @@
             <div class="day-card__meal">
                 <button type="button" class="drag-handle" data-drag-handle aria-label="Drag {{ r.name }} to another day" title="Drag to another day">{{ icon("grip", 20) }}</button>
                 <a class="day-card__photo" href="/plan/meals/{{ r.meal_id }}" tabindex="-1" aria-hidden="true">
-                    {% if r.photo_filename %}
+                    {% if r.kind == "packaged" %}
+                        {{ icon("box", 28) }}
+                    {% elif r.photo_filename %}
                         <img src="/photos/{{ r.photo_filename }}" alt="" loading="lazy" decoding="async">
                     {% else %}
                         {{ icon("plate", 28) }}
@@ -42,14 +44,18 @@
                     <a class="day-card__title" href="/plan/meals/{{ r.meal_id }}">{{ r.name }}</a>
                     {% set minutes = (r.prep_minutes or 0) + (r.cook_minutes or 0) %}
                     <p class="day-card__time">
+                        {%- if r.kind == "packaged" %}<span class="day-card__serves">Packaged</span>{% if r.brand %}<span>{{ r.brand }}</span>{% endif %}{% endif -%}
                         {%- if minutes %}<span>{{ icon("clock", 13) }}{{ minutes | duration }}</span>{% endif -%}
                         {%- if r.meal_servings %}<span class="day-card__serves">For {{ r.meal_servings }}</span>{% endif -%}
                     </p>
                 </div>
             </div>
+            {% if r.kind == "recipe" %}
             <a class="btn btn-outline btn-sm day-card__add-ingredients" href="/plan/meals/{{ r.meal_id }}/ingredients" data-checklist-open aria-label="Add ingredients for {{ r.name }} to the shopping list">{{ icon("basket", 16) }}Add ingredients</a>
+            {% endif %}
             <div class="day-card__actions">
                 <a class="mini-link" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose">Change</a>
+                <a class="mini-link" href="/plan/{{ week_iso }}/day/{{ d.index }}/packaged">Scan instead</a>
                 <details class="move-menu">
                     <summary class="mini-link">Move</summary>
                     <form class="move-menu__form" method="post" action="/plan/{{ week_iso }}/move" data-plan-form>
@@ -72,6 +78,9 @@
         {% else %}
             <a class="day-card__add" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose" aria-label="Add dinner for {{ d.name }}">
                 {{ icon("plus", 18) }}<span>Add dinner</span>
+            </a>
+            <a class="day-card__scan" href="/plan/{{ week_iso }}/day/{{ d.index }}/packaged" aria-label="Scan a packaged meal for {{ d.name }}">
+                {{ icon("camera", 16) }}<span>Scan a packaged meal</span>
             </a>
             <p class="day-card__blank">Leftovers, a night out, or nothing planned</p>
         {% endif %}

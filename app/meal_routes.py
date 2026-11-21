@@ -39,6 +39,10 @@ MESSAGES = {
     "updated": "Shopping list updated for the new serving count.",
     "duplicate": "Those were already added.",
 }
+PACKAGED_MESSAGES = {
+    "planned": "Added to the plan. The shopping list wasn't changed.",
+    "directions": "Directions saved.",
+}
 
 
 def _request_key(value) -> str | None:
@@ -46,9 +50,10 @@ def _request_key(value) -> str | None:
     return value if _REQUEST_KEY.fullmatch(value) else None
 
 
-def _meal_or_404(conn: sqlite3.Connection, meal_id: int) -> dict:
+def _meal_or_404(conn: sqlite3.Connection, meal_id: int, kind: str | None = "recipe") -> dict:
+    """A planned dinner. Recipe-only features (servings, Add ingredients, assistant) pass kind="recipe"."""
     meal = planner.get_meal(conn, meal_id)
-    if meal is None:
+    if meal is None or (kind and meal["kind"] != kind):
         raise HTTPException(status_code=404, detail="That dinner isn't on the plan anymore.")
     return meal
 
@@ -95,7 +100,10 @@ def _updated(request: Request, conn: sqlite3.Connection, meal_id: int, session: 
 def planned_meal(request: Request, meal_id: int, msg: str = "",
                  session: auth.Session = Depends(auth.require_session),
                  conn: sqlite3.Connection = Depends(get_db)):
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, kind=None)
+    if meal["kind"] == "packaged":
+        from app.packaged_routes import packaged_page   # a scanned store-bought meal
+        return packaged_page(request, conn, meal, session, PACKAGED_MESSAGES.get(msg, ""))
     return render(request, "planned_meal.html", {
         **_context(request, conn, meal, session), "nav_active": "plan", "message": MESSAGES.get(msg, ""),
     }, session)

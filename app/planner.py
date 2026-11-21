@@ -85,11 +85,15 @@ def get_plan(conn: sqlite3.Connection, week: date, today: date | None = None) ->
     `recipe` includes `meal_id` and the dinner's serving count.
     """
     today = today or date.today()
+    # A dinner is a recipe from the box or a packaged meal (recipe_id NULL, details in packaged_meals).
     rows = conn.execute(
-        """SELECT p.day, p.id AS meal_id, p.servings AS meal_servings, r.id, r.name, r.photo_filename,
-                  r.prep_minutes, r.cook_minutes, r.servings
-           FROM planned_meals p JOIN recipes r ON r.id = p.recipe_id
-           WHERE p.week_start = ?""",
+        """SELECT p.day, p.id AS meal_id, p.servings AS meal_servings, r.id,
+                  COALESCE(r.name, pk.name) AS name, r.photo_filename, r.prep_minutes, r.cook_minutes, r.servings,
+                  CASE WHEN p.recipe_id IS NULL THEN 'packaged' ELSE 'recipe' END AS kind,
+                  pk.brand, pk.package_size
+           FROM planned_meals p LEFT JOIN recipes r ON r.id = p.recipe_id
+           LEFT JOIN packaged_meals pk ON pk.meal_id = p.id
+           WHERE p.week_start = ? AND (r.id IS NOT NULL OR pk.id IS NOT NULL)""",
         (week.isoformat(),),
     ).fetchall()
     by_day = {row["day"]: dict(row) for row in rows}
@@ -107,8 +111,11 @@ def get_meal(conn: sqlite3.Connection, meal_id: int) -> dict | None:
     """One planned dinner with its recipe's basics, or None."""
     row = conn.execute(
         """SELECT p.id, p.week_start, p.day, p.recipe_id, p.servings AS meal_servings,
-                  r.name AS recipe_name, r.servings AS recipe_servings
-           FROM planned_meals p JOIN recipes r ON r.id = p.recipe_id WHERE p.id = ?""",
+                  COALESCE(r.name, pk.name) AS recipe_name, r.servings AS recipe_servings,
+                  CASE WHEN p.recipe_id IS NULL THEN 'packaged' ELSE 'recipe' END AS kind
+           FROM planned_meals p LEFT JOIN recipes r ON r.id = p.recipe_id
+           LEFT JOIN packaged_meals pk ON pk.meal_id = p.id
+           WHERE p.id = ? AND (r.id IS NOT NULL OR pk.id IS NOT NULL)""",
         (meal_id,),
     ).fetchone()
     if row is None:
@@ -142,11 +149,22 @@ def _check_day(day: int, week: date | None = None, today: date | None = None) ->
         raise PlanError("That day is over, so its dinner stays in the history.")
 
 
-def set_meal(conn: sqlite3.Connection, week: date, day: int, recipe_id: int, today: date | None = None) -> None:
-    """Plan a recipe for a day, replacing whatever was there.
+def _label_photos(conn: sqlite3.Connection, where: str, params: tuple) -> list[str]:
+    """Label photos of packaged meals about to be removed (the caller deletes the files).
+
+    `where` is always one of the fixed conditions written in this module, never request data.
+    """
+    return [r[0] for r in conn.execute(
+        f"""SELECT pk.label_photo FROM packaged_meals pk JOIN planned_meals p ON p.id = pk.meal_id
+            WHERE {where} AND pk.label_photo IS NOT NULL""", params)]
+
+
+def set_meal(conn: sqlite3.Connection, week: date, day: int, recipe_id: int, today: date | None = None) -> list[str]:
+    """Plan a recipe for a day, replacing whatever was there (the "Change" picker).
 
     Choosing the recipe that's already planned keeps that dinner (and its servings and chat).
-    With `today`, days that are already over can't be changed.
+    With `today`, days that are already over can't be changed. Returns label photos of a
+    replaced packaged meal, for the caller to delete.
     """
     _check_day(day, week, today)
     if conn.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone() is None:
@@ -154,20 +172,26 @@ def set_meal(conn: sqlite3.Connection, week: date, day: int, recipe_id: int, tod
     w = week.isoformat()
     with write_transaction(conn):
         ensure_week(conn, week)
-        conn.execute("DELETE FROM planned_meals WHERE week_start = ? AND day = ? AND recipe_id != ?",
+        # "recipe_id IS NULL" covers a packaged meal (NULL != x is never true in SQL).
+        photos = _label_photos(conn, "p.week_start = ? AND p.day = ? AND (p.recipe_id IS NULL OR p.recipe_id != ?)",
+                               (w, day, recipe_id))
+        conn.execute("DELETE FROM planned_meals WHERE week_start = ? AND day = ? AND (recipe_id IS NULL OR recipe_id != ?)",
                      (w, day, recipe_id))
         if conn.execute("SELECT 1 FROM planned_meals WHERE week_start = ? AND day = ?", (w, day)).fetchone() is None:
             conn.execute("INSERT INTO planned_meals (week_start, day, recipe_id) VALUES (?, ?, ?)", (w, day, recipe_id))
         _bump_plan(conn, week)
+    return photos
 
 
-def clear_meal(conn: sqlite3.Connection, week: date, day: int, today: date | None = None) -> None:
-    """Leave a day blank (leftovers, eating out, or no plan)."""
+def clear_meal(conn: sqlite3.Connection, week: date, day: int, today: date | None = None) -> list[str]:
+    """Leave a day blank (leftovers, eating out, or no plan). Returns label photos to delete."""
     _check_day(day, week, today)
     with write_transaction(conn):
         ensure_week(conn, week)
+        photos = _label_photos(conn, "p.week_start = ? AND p.day = ?", (week.isoformat(), day))
         conn.execute("DELETE FROM planned_meals WHERE week_start = ? AND day = ?", (week.isoformat(), day))
         _bump_plan(conn, week)
+    return photos
 
 
 def move_meal(conn: sqlite3.Connection, week: date, from_day: int, to_day: int, today: date | None = None) -> None:
@@ -203,6 +227,8 @@ def set_meal_servings(conn: sqlite3.Connection, meal_id: int, servings: int | No
         meal = get_meal(conn, meal_id)
         if meal is None:
             raise PlanError("That dinner isn't on the plan anymore.")
+        if meal["kind"] != "recipe":
+            raise PlanError("Servings can only be changed for recipes from the box.")
         if servings is not None and not meal["recipe_servings"]:
             raise PlanError("First tell us how many servings the recipe makes as written.")
         if servings == meal["recipe_servings"]:

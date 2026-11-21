@@ -6,7 +6,7 @@ A self-hosted recipe box, weekly meal planner, and shared shopping list for a ho
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-537%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-568%20passing-2ea44f)
 
 ## The problem
 
@@ -27,6 +27,7 @@ Family Table brings it together:
 | **Recipes** | Photos, categories, search, ingredient checklist, cooking steps, and signed notes from family members |
 | **Recipe import** | Paste a URL; the form is pre-filled from the page's schema.org data for review before saving. Downloads go through an SSRF-safe fetcher |
 | **Meal planning** | Monday–Sunday board with drag-and-drop (mouse and touch), swapping, and past/future weeks. A dinner leaves the board at midnight in the household's time zone and stays in the week's history |
+| **Packaged meals** | **Scan a packaged meal** on a day: read the UPC with the phone camera (or a photo of the barcode, or typed digits, or just the name), look it up on Open Food Facts, correct it, and add it. Cooking directions are shown only as printed (copied, typed, or a tap-to-enlarge photo of the box). Never added to the recipe box or the shopping list |
 | **Serving sizes** | Each planned dinner can be cooked for a different number of people; amounts (and quantities repeated in the steps) scale from the original with readable fractions |
 | **Shopping list** | **Add ingredients** per dinner with a checklist (staples start unchecked); amounts combined with exact fraction math and unit conversion; each item lists the recipes that need it. Double taps never add twice |
 | **Cooking Assistant** | A chat panel per planned dinner using a local Ollama model (`qwen3:1.7b`), with voice input where the browser supports it. The app does the math (conversions, scaling) and only saves a recipe change after you confirm |
@@ -106,6 +107,8 @@ app/
   routes.py          Login and recipe pages
   plan_routes.py     Planner, shopping list, and staples pages and JSON endpoints
   meal_routes.py     One planned dinner: servings, Add ingredients, Cooking Assistant
+  packaged.py        Packaged meals: barcode checks, Open Food Facts lookup, directions
+  packaged_routes.py Scan a packaged meal pages
   meals.py           Recipe queries and validation
   planner.py         Weekly plans: days, moving, swapping, servings, past days
   clock.py           "Today" in the household's time zone
@@ -212,13 +215,14 @@ source .venv/bin/activate
 python -m pytest
 ```
 
-The suite has **537 tests**. Each test gets its own temporary database and upload folder, so tests never touch real data, and the recipe-import tests use a local test server instead of the internet. Coverage includes:
+The suite has **568 tests**. Each test gets its own temporary database and upload folder, so tests never touch real data, and the recipe-import tests use a local test server instead of the internet. Coverage includes:
 
 - Authentication, sessions, CSRF, and login throttling
 - Recipe CRUD, validation, and photo processing
 - Recipe import parsing and SSRF protection (private ranges, IPv6 encodings, redirects, DNS rebinding)
 - Ingredient parsing, unit conversion, and combining
 - Meal planning, the local-midnight boundary, per-dinner shopping selections, concurrency, and staples
+- Packaged meals: barcodes, the product lookup (with a stand-in for Open Food Facts), replacing, directions, and photos
 - Serving scaling and unit conversion, the Cooking Assistant (with a stand-in model), and recipe-edit confirmation
 - PWA manifest and service worker rules
 - Production hosting settings and the Docker configuration

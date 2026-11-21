@@ -47,6 +47,15 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 - [ ] Leave the planner open past midnight (or set the phone's clock ahead is **not** enough: the server's household time zone decides). The next morning, yesterday's dinner has left its day and appears under **Earlier this week**.
 - [ ] **Add ingredients** on a dinner opens a short checklist as a sheet. Staples start unchecked. The button reads "Add 1 item", "Add 3 items", and is disabled with nothing checked. Double-tapping it adds the items once.
 
+## 5b. Scan a packaged meal (on the HTTPS address)
+
+- [ ] On an open day, tap **Scan a packaged meal** → **Scan the barcode**. Safari asks for the camera; allow it. Point at a frozen meal's barcode: it's read within a few seconds and the name, brand, and size appear.
+- [ ] Check the details match the box; fix anything wrong. If no directions were found, tap **Take a photo** and photograph the cooking panel.
+- [ ] **Add to …**, then open the planner on the other phone: the meal is on that day; open it and tap the photo to enlarge it.
+- [ ] Deny the camera (Settings → Safari → Camera → Deny), reload, tap **Scan the barcode**: a message explains, and **Take a photo of the barcode** and typed digits still work.
+- [ ] Try it on cellular data (Wi-Fi off) with Funnel running.
+- [ ] On a day that already has a dinner, the page warns you, and nothing is replaced unless you tick the box.
+
 ## 5a. Planned dinner and Cooking Assistant
 
 - [ ] Tap a planned dinner's name: the recipe opens with **Cooking for** −/+ buttons. Changing servings updates the amounts straight away; **Reset** goes back.
