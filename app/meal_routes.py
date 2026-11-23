@@ -2,7 +2,8 @@
 # checklist, and the Cooking Assistant. Every page works as plain HTML forms; the page's
 # JavaScript sends the same forms in the background and swaps in the fresh HTML.
 
-# re checks request keys sent by the browser.
+# json stores reply details; re checks request keys sent by the browser.
+import json
 import re
 
 # secrets makes a fresh key for each checklist form (stops double adds).
@@ -15,13 +16,13 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 # run_in_threadpool keeps the slow model call off the event loop.
-from fastapi.concurrency import run_in_threadpool
 
 # JSON for the page's JavaScript.
 from fastapi.responses import JSONResponse
 
 # Project modules.
-from app import assistant, auth, meal_chat, meals, planner, shopping, tables
+from app import assistant, auth, cook, meal_chat, meals, planner, shopping, tables
+from app.model_gate import Busy
 from app.database import get_db
 from app.plan_routes import _fragment, _wants_json, household_today
 from app.routes import redirect, render
@@ -112,9 +113,15 @@ def planned_meal(request: Request, meal_id: int, msg: str = "",
     if meal["kind"] == "packaged":
         from app.packaged_routes import packaged_page   # a scanned store-bought meal
         return packaged_page(request, conn, meal, session, PACKAGED_MESSAGES.get(msg, ""))
+    context = _context(request, conn, meal, session)
     return render(request, "planned_meal.html", {
-        **_context(request, conn, meal, session), "nav_active": "plan", "message": MESSAGES.get(msg, ""),
+        **context, **_cook_context(conn, meal, context["steps"]), "nav_active": "plan", "message": MESSAGES.get(msg, ""),
     }, session)
+
+
+def _cook_context(conn: sqlite3.Connection, meal: dict, steps: list[dict]) -> dict:
+    step = min(cook.get_step(conn, meal["id"]), len(steps))
+    return {"cook_step": step, "cook_total": len(steps), "cook_greeting": cook.greeting(step, len(steps))}
 
 
 @router.post("/plan/meals/{meal_id}/servings")
@@ -234,22 +241,43 @@ async def chat_send(request: Request, meal_id: int,
         return _updated(request, conn, meal_id, session, anchor="#assistant")   # already sent (a retry)
 
     context = _context(request, conn, meal, session)
-    ask = request.app.state.ask_model
-    reply = await run_in_threadpool(assistant.respond, meal, context["recipe"], context["lines"],
-                                    [s["body"] for s in context["steps"]], previous, text, ask)
-    # The app makes every change itself, using the same functions as the page's own controls.
+    reply = await _assistant_reply(request, session, meal, context, previous, text)
+    _apply_reply_actions(request, conn, session, meal, reply)
+    meal_chat.save_reply(conn, meal, reply)
+    return _updated(request, conn, meal_id, session, anchor="#assistant")
+
+
+async def _assistant_reply(request: Request, session: auth.Session, meal: dict, context: dict, history: list[dict],
+                           text: str, extra: str = "") -> assistant.Reply:
+    """The app's own answer if it has one; otherwise the model, on its own pool (never holding a transaction)."""
+    steps = [s["body"] for s in context["steps"]]
+    local = assistant.local_reply(meal, context["recipe"], context["lines"], history, text)
+    if local is not None:
+        return local
+    if auth.too_many(request, "model", f"user:{session.user_id}"):
+        return assistant.Reply("That's a lot of questions in a few minutes. Give me a moment and ask again.", kind="busy")
+    try:
+        return await request.app.state.model_gate.run(
+            session.user_id, assistant.ask_model, request.app.state.ask_model, meal, context["recipe"],
+            context["lines"], steps, history, text, extra)
+    except Busy as exc:
+        return assistant.Reply(str(exc), kind="busy")
+
+
+def _apply_reply_actions(request: Request, conn: sqlite3.Connection, session: auth.Session, meal: dict,
+                         reply: assistant.Reply) -> None:
+    """The app makes every change itself, using the same functions as the page's own controls."""
     try:
         if reply.recipe_yield:
             planner.set_recipe_yield(conn, meal["recipe_id"], reply.recipe_yield)
         if reply.servings or reply.reset_servings:
-            planner.set_meal_servings(conn, meal_id, None if reply.reset_servings else reply.servings)
+            planner.set_meal_servings(conn, meal["id"], None if reply.reset_servings else reply.servings)
     except planner.PlanError as exc:
-        reply = assistant.Reply(str(exc))
-    if reply.kind == "servings" and shopping.meal_checklist(conn, _meal_or_404(conn, meal_id, session, request=request))["outdated"]:
+        reply.body, reply.kind, reply.servings, reply.reset_servings = str(exc), "text", None, False
+        return
+    if reply.kind == "servings" and shopping.meal_checklist(conn, _meal_or_404(conn, meal["id"], session))["outdated"]:
         reply.body += (" Groceries you already added for this dinner are still for the old amount; "
                        "open Add ingredients if you want to update them.")
-    meal_chat.save_reply(conn, meal, reply)
-    return _updated(request, conn, meal_id, session, anchor="#assistant")
 
 
 @router.post("/plan/meals/{meal_id}/proposals/{proposal_id}/{decision}")
@@ -266,3 +294,180 @@ async def proposal_decision(request: Request, meal_id: int, proposal_id: int, de
     except meal_chat.ProposalError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
     return _updated(request, conn, meal_id, session, anchor="#assistant")
+
+
+# ---- Cook with me (spoken conversation) ----
+
+def _packaged_steps(item: dict) -> list[dict]:
+    """A packaged meal's directions as steps: only what the app has as text, never invented."""
+    steps = []
+    for section, label in (("oven", "Oven"), ("microwave", "Microwave"), ("other", "Directions")):
+        text = (item or {}).get(f"{section}_directions") or ""
+        if text.strip():
+            steps.append({"title": label, "body": " ".join(text.split())})
+    return steps
+
+
+def _cook_state(conn: sqlite3.Connection, meal: dict, steps: list[dict]) -> dict:
+    step = min(cook.get_step(conn, meal["id"]), len(steps))
+    return {"step": step, "total": len(steps), "greeting": cook.greeting(step, len(steps)),
+            "say_greeting": cook.speakable(cook.greeting(step, len(steps))),
+            "steps": [cook.step_text(steps, n) for n in range(1, len(steps) + 1)]}
+
+
+@router.get("/plan/meals/{meal_id}/cook")
+def cook_state(request: Request, meal_id: int, session: auth.Session = Depends(auth.require_session),
+               conn: sqlite3.Connection = Depends(get_db)):
+    """Where the cook is (restored when the page is reopened, or after the phone was locked)."""
+    meal = _meal_or_404(conn, meal_id, session, kind=None, request=request)
+    if meal["kind"] == "packaged":
+        from app import packaged
+        steps = _packaged_steps(packaged.get_packaged(conn, meal_id))
+    else:
+        steps = _context(request, conn, meal, session)["steps"]
+    return JSONResponse(_cook_state(conn, meal, steps))
+
+
+def _cook_json(request, conn, session, meal, steps, reply: "cook.CookReply", servings_changed: bool = False):
+    total = len(steps)
+    out = {"say": reply.say, "show": reply.show, "step": reply.step, "total": total, "kind": reply.kind,
+           "proposal_id": reply.proposal_id, "steps": [cook.step_text(steps, n) for n in range(1, total + 1)]}
+    if meal["kind"] == "recipe":
+        fresh = _meal_or_404(conn, meal["id"], session)
+        context = _context(request, conn, fresh, session)
+        out["servings"] = fresh["servings"]
+        out["log"] = _fragment("_assistant_log.html", context)
+        if servings_changed:
+            out["recipe"] = _fragment("_planned_recipe.html", context)
+    return JSONResponse(out)
+
+
+@router.post("/plan/meals/{meal_id}/cook")
+async def cook_turn(request: Request, meal_id: int, session: auth.Session = Depends(auth.require_session),
+                    conn: sqlite3.Connection = Depends(get_db)):
+    """One spoken (or typed) turn in Cook with me. Every turn is saved with the dinner's conversation."""
+    form = await auth.read_form_with_csrf(request, session.csrf_token)
+    meal = _meal_or_404(conn, meal_id, session, kind=None, request=request)
+    text = " ".join(str(form.get("text") or "").split())[:assistant.MAX_MESSAGE]
+    key = _request_key(form.get("request_key"))
+    heard = str(form.get("proposal_id") or "")
+    heard_proposal = int(heard) if heard.isdigit() else None
+    if not text:
+        return JSONResponse({"error": "I didn't catch anything."}, status_code=422)
+    if auth.too_many(request, "voice", f"user:{session.user_id}"):
+        return JSONResponse({"error": "That's a lot of talking in a few minutes. Give it a moment."}, status_code=429)
+
+    if meal["kind"] == "packaged":
+        return _packaged_turn(request, conn, session, meal, text, key)
+
+    context = _context(request, conn, meal, session)
+    steps = context["steps"]
+    step = min(cook.get_step(conn, meal_id), len(steps))
+    history = meal_chat.history(conn, meal_id)
+    if not meal_chat.save_user_message(conn, meal_id, text, key):
+        # The same turn arrived twice (a retry or a repeated transcript): answer once, change nothing.
+        reply = cook.CookReply("", "", step, "duplicate")
+        return _cook_json(request, conn, session, meal, steps, reply)
+
+    def finish(reply: "cook.CookReply", kind: str = "text", servings_changed: bool = False):
+        if reply.show:
+            with conn:
+                conn.execute("INSERT INTO meal_messages (meal_id, role, body, kind, data_json) VALUES (?, 'assistant', ?, ?, ?)",
+                             (meal_id, reply.show, kind, json.dumps({"step": reply.step} if kind == "step" else {})))
+        if reply.step != step:
+            cook.set_step(conn, meal_id, reply.step)
+        return _cook_json(request, conn, session, meal, steps, reply, servings_changed)
+
+    # A spoken yes/no about a pending recipe change: only ever the narrow, safe path.
+    pending = cook.pending_proposal(conn, meal_id)
+    if cook.is_confirm(text) or cook.is_cancel(text):
+        if pending is None:
+            msg = "There's nothing waiting to be saved." if cook.is_confirm(text) else "Okay."
+            return finish(cook.CookReply(msg, msg, step, "answer"))
+        if cook.is_cancel(text):
+            meal_chat.decide_proposal(conn, meal, pending["id"], confirm=False)
+            msg = "Okay, I left the saved recipe as it was."
+            return _cook_json(request, conn, session, meal, steps, cook.CookReply(msg, msg, step, "confirm"))
+        if heard_proposal != pending["id"] or not pending["is_latest"] or \
+                pending["age_minutes"] > cook.MAX_PROPOSAL_AGE_MINUTES:
+            msg = ("I won't change the saved recipe without a clear yes right after hearing the change. "
+                   "Tap Confirm on the screen, or ask me to read the change again.")
+            return finish(cook.CookReply(msg, msg, step, "answer"))
+        status = meal_chat.decide_proposal(conn, meal, pending["id"], confirm=True)
+        msg = ("Saved. The recipe box has the new version." if status == "confirmed" else
+               "The recipe was edited since I suggested that, so I didn't change anything.")
+        return _cook_json(request, conn, session, meal, steps, cook.CookReply(msg, msg, step, "confirm"))
+    if pending and re.search(r"\b(read|say|tell me)\b.*\b(change|that)\b.*\bagain\b|^what (?:change|was the change)",
+                             text.lower()):
+        proposal = next((m["proposal"] for m in reversed(history) if m.get("proposal") and
+                         m["proposal"]["id"] == pending["id"]), None)
+        if proposal:
+            msg = cook.proposal_speech(proposal["changes"])
+            with conn:   # read again: it becomes the latest thing said, so a yes right after it counts
+                message_id = conn.execute(
+                    "INSERT INTO meal_messages (meal_id, role, body, kind) VALUES (?, 'assistant', ?, 'proposal')",
+                    (meal_id, "Here's the change again. Nothing is saved until you confirm.")).lastrowid
+                conn.execute("UPDATE recipe_edit_proposals SET message_id = ? WHERE id = ?", (message_id, pending["id"]))
+            return _cook_json(request, conn, session, meal, steps,
+                              cook.CookReply(msg, msg, step, "proposal", proposal_id=pending["id"]))
+
+    plain = cook._plain(text)
+    guided = cook.guide(steps, text, step, history)
+    if guided is None and cook._WHOLE.search(plain):
+        guided = cook.whole_recipe(context["lines"], steps, meal["servings"])
+        guided.step = step
+    elif guided is None and cook._INGREDIENTS.search(plain):
+        guided = cook.ingredient_list(context["lines"], meal["servings"])
+        guided.step = step
+    if guided is not None:
+        return finish(guided, "step" if guided.kind == "step" else "clarify" if guided.kind == "clarify" else "text")
+
+    # A question or request: the same assistant as the typed chat (amounts, conversions, servings, edits, model).
+    current = cook.step_text(steps, step) if step else ""
+    extra = ("\nSPOKEN CONVERSATION: the cook is listening with busy hands. Reply in one or two short sentences."
+             + (f" They are on step {step} of {len(steps)}: {current}" if step else ""))
+    reply = await _assistant_reply(request, session, meal, context, history, text, extra)
+    _apply_reply_actions(request, conn, session, meal, reply)
+    meal_chat.save_reply(conn, meal, reply)
+    say = cook.speakable(reply.body)
+    proposal_id = None
+    if reply.kind == "proposal" and reply.changes:
+        pending = cook.pending_proposal(conn, meal_id)
+        proposal_id = pending["id"] if pending else None
+        say = cook.speakable(reply.body.split(" Nothing is saved")[0]) + " " + cook.proposal_speech(reply.changes)
+    elif step and reply.kind in ("text", "servings"):
+        say += f" We're still on step {step}."
+    kind = {"proposal": "proposal", "clarify": "clarify", "offline": "offline", "busy": "busy"}.get(reply.kind, "answer")
+    return _cook_json(request, conn, session, meal, steps, cook.CookReply(say, reply.body, step, kind, proposal_id),
+                      servings_changed=bool(reply.servings or reply.reset_servings or reply.recipe_yield))
+
+
+def _packaged_turn(request, conn, session, meal, text: str, key: str | None):
+    """Cook with me for a store-bought meal: only the directions the app has as text; never invented."""
+    from app import packaged
+    item = packaged.get_packaged(conn, meal["id"])
+    steps = _packaged_steps(item)
+    step = min(cook.get_step(conn, meal["id"]), len(steps))
+    history = meal_chat.history(conn, meal["id"])
+    if not meal_chat.save_user_message(conn, meal["id"], text, key):
+        return _cook_json(request, conn, session, meal, steps, cook.CookReply("", "", step, "duplicate"))
+    reply = cook.guide(steps, text, step, history) if steps else None
+    if reply is None and steps and cook._WHOLE.search(cook._plain(text)):
+        joined = " ".join(f"{s['title']}: {s['body']}" for s in steps)
+        reply = cook.CookReply(cook.speakable(joined), joined, step, "answer")
+    if reply is None:
+        if not steps and item and item.get("label_photo"):
+            msg = ("The directions for this one are only in the photo of the box, and I can't read photos. "
+                   "Please check the label. You can tap the photo to enlarge it.")
+        elif not steps:
+            msg = "There are no cooking directions saved for this meal. Please check the package."
+        else:
+            msg = ("I can only read out the directions saved for this meal. For anything else, check the package. "
+                   "Say next or repeat to go through the directions.")
+        reply = cook.CookReply(msg, msg, step, "answer")
+    with conn:
+        conn.execute("INSERT INTO meal_messages (meal_id, role, body, kind) VALUES (?, 'assistant', ?, ?)",
+                     (meal["id"], reply.show, "step" if reply.kind == "step" else "text"))
+    if reply.step != step:
+        cook.set_step(conn, meal["id"], reply.step)
+    return _cook_json(request, conn, session, meal, steps, reply)

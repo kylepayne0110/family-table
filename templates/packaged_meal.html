@@ -15,6 +15,8 @@
 
 {% block scripts %}
 <script src="{{ static_url('js/scan.js') }}" defer></script>
+<script src="{{ static_url('js/voice.js') }}" defer></script>
+<script src="{{ static_url('js/cook.js') }}" defer></script>
 {% endblock %}
 
 {% macro source_note(source) -%}
@@ -26,6 +28,7 @@
 
 {% block content %}
 {{ flash(message) }}
+{% include "_cook_panel.html" %}
 {% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
 
 <article class="pk">
@@ -41,6 +44,7 @@
             {% else %}Product details entered by your family.{% endif %}
             Not in the recipe box; the shopping list wasn't changed.
         </p>
+        <p class="planned__actions"><a class="btn btn-primary btn-cook" href="#cook" data-cook-start aria-controls="cook">{{ icon("mic", 18) }}Cook with me</a></p>
     </header>
 
     <section class="pk-directions" aria-labelledby="directions-title">

@@ -124,3 +124,52 @@ def sign_up(page, username, name, password="a long kitchen password", invite_url
     page.fill("#password", password)
     page.click("button:has-text('Create account')")
     page.wait_for_load_state()
+
+
+# ---- Data helpers (write straight to the server's database file) ----
+
+def db_path(server):
+    return server["data"] / "family_table.db"
+
+
+def sql(server, statement, params=()):
+    from app.database import connect
+    conn = connect(db_path(server))
+    try:
+        with conn:
+            return [tuple(r) for r in conn.execute(statement, params)]
+    finally:
+        conn.close()
+
+
+def add_recipe(server, name, ingredients, steps, servings=4, table_name="Payne's Table"):
+    from app.database import connect
+    from app.meals import RecipeData, save_recipe
+    conn = connect(db_path(server))
+    try:
+        table = conn.execute("SELECT id FROM family_tables WHERE name = ?", (table_name,)).fetchone()[0]
+        data = RecipeData(name=name, description="", category="weeknight", cuisine="", prep_minutes=10,
+                          cook_minutes=20, servings=servings, card_tag="", last_made=None,
+                          ingredients=ingredients, steps=steps)
+        return save_recipe(conn, data, None, table_id=table)
+    finally:
+        conn.close()
+
+
+def next_monday() -> str:
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+    from datetime import datetime
+    today = datetime.now(ZoneInfo("America/Chicago")).date()
+    return (today + timedelta(days=7 - today.weekday())).isoformat()
+
+
+def plan_through_ui(page, week, day, recipe_name):
+    """Plan a dinner the way a person does: open the day, tap the recipe."""
+    page.goto(f"/plan?week={week}")
+    page.click(f"#day-{day} .day-card__add, #day-{day} a.mini-link:has-text('Change')")
+    page.click(f".pick-tile:has-text(\"{recipe_name}\")")
+    page.wait_for_url("**/plan?week=*")
+    page.click(f"#day-{day} .day-card__title")
+    page.wait_for_url("**/plan/meals/*")
+    return int(page.url.rstrip("/").split("/")[-1].split("#")[0].split("?")[0])

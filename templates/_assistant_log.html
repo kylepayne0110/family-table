@@ -19,8 +19,8 @@
         <ul class="proposal__changes">
             {% for c in p.changes %}
             <li>
-                <span class="proposal__where">{% if c.kind == "ingredient" %}Ingredient{% if c.amount %} ({{ c.amount }}){% endif %}{% else %}Step {{ c.step }}{% endif %}</span>
-                <del>{{ c.before }}</del>
+                <span class="proposal__where">{% if c.kind == "ingredient" %}Ingredient{% if c.amount %} ({{ c.amount }}){% endif %}{% elif c.kind == "amount" %}Amount of {{ c.name }}{% else %}Step {{ c.step }}{% endif %}</span>
+                <del>{{ c.before or "(no amount)" }}</del>
                 <ins>{{ c.after }}</ins>
             </li>
             {% endfor %}

@@ -63,6 +63,11 @@ def _count(text: str) -> int | None:
     return int(text) if text.isdigit() else _WORD_NUMBERS.get(text)
 
 
+def _number_word(value) -> str:
+    words = {v: k for k, v in _WORD_NUMBERS.items() if k not in ("a", "an", "a dozen", "dozen")}
+    return words.get(value, "zzz") if isinstance(value, int) else "zzz"
+
+
 def _qty(text: str) -> Fraction | None:
     text = (text or "").strip().lower()
     if text.startswith("half"):
@@ -82,8 +87,8 @@ _QUESTION_START = re.compile(
 _POLITE_REQUEST = re.compile(r"^(?:please\s+|ok(?:ay)?,?\s+|now,?\s+)?(?:can|could|would|will) you\b")
 _PERMANENT = re.compile(
     r"\b(from now on|going forward|permanent(?:ly)?|for good|always|every time|in the future|"
-    r"save (?:it|this|that|the change)|(?:update|change|edit) the (?:saved )?recipe|in the (?:saved )?recipe|"
-    r"the saved recipe|for next time)\b")
+    r"save (?:it|this|that|the change)|(?:update|change|edit) the (?:saved |original )?recipe|"
+    r"in the (?:saved |original )?recipe|the (?:saved|original) recipe|for next time)\b")
 _TONIGHT_ONLY = re.compile(r"\b(tonight|just this (?:time|once)|only this time|this time|for now|today|just for (?:this|now))\b")
 
 
@@ -231,6 +236,177 @@ def proposal_reply(recipe: dict, old: str, new: str) -> Reply:
                  kind="proposal", changes=changes, data={"old": old, "new": new})
 
 
+# ---- Permanent edits (amounts) ----
+
+_AMOUNT_WORDS = {
+    "a": "1", "an": "1", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7",
+    "eight": "8", "nine": "9", "ten": "10", "eleven": "11", "twelve": "12",
+    "half": "1/2", "a half": "1/2", "one half": "1/2", "a quarter": "1/4", "one quarter": "1/4", "quarter": "1/4",
+    "three quarters": "3/4", "three quarter": "3/4", "three fourths": "3/4", "a third": "1/3", "one third": "1/3",
+    "two thirds": "2/3", "an eighth": "1/8", "one eighth": "1/8",
+}
+_UNIT_WORDS = (r"cups?|tablespoons?|tbsps?|tbs|teaspoons?|tsps?|pounds?|lbs?|ounces?|oz|grams?|g|kilograms?|kg|"
+               r"milliliters?|ml|liters?|cloves?|cans?|pinch(?:es)?|dash(?:es)?|sticks?|slices?|pieces?|quarts?|pints?")
+_SPOKEN_NUM = (r"(?:\d+|one|two|three|four|five|six)\s+and\s+(?:a\s+)?(?:half|quarter|third)|"
+               r"\d+(?:\.\d+)?(?:\s+\d+/\d+)?|\d+/\d+|\d*[½⅓⅔¼¾⅛]|"
+               + "|".join(sorted((re.escape(w) for w in _AMOUNT_WORDS), key=len, reverse=True)))
+_AMOUNT_RE = rf"(?P<num>{_SPOKEN_NUM})(?:\s+of)?(?:\s+(?:an?\s+)?(?P<unit>{_UNIT_WORDS}))?"
+_AMOUNT_EDIT_PATTERNS = [
+    re.compile(rf"\b(?:use|using|put in|add|make it|it should be|it needs)\s+(?:only\s+|just\s+)?{_AMOUNT_RE}\s+"
+               rf"(?:of\s+)?(?:the\s+)?(?P<ing>[a-z][a-z' -]*?)(?=\s+(?:in|for|from|going|instead|next|permanently|"
+               rf"every|always|not)\b|$)"),
+    re.compile(rf"\b(?:change|set|make|update)\s+(?:the\s+)?(?P<ing>[a-z][a-z' -]*?)\s+(?:amount\s+)?to\s+{_AMOUNT_RE}\b"),
+]
+_FRACTION_GLYPHS = {"½": "1/2", "⅓": "1/3", "⅔": "2/3", "¼": "1/4", "¾": "3/4", "⅛": "1/8"}
+
+
+def spoken_amount(num: str, unit: str | None) -> str | None:
+    """'three quarters', 'cup' -> '3/4 cup'; '1 and a half', 'cups' -> '1 1/2 cups'."""
+    num = num.strip()
+    for glyph, frac in _FRACTION_GLYPHS.items():
+        num = re.sub(rf"(\d){glyph}", rf"\1 {frac}", num).replace(glyph, frac)
+    combo = re.fullmatch(r"(\d+|one|two|three|four|five|six)\s+and\s+(?:a\s+)?(half|quarter|third)", num)
+    if combo:
+        whole = combo.group(1) if combo.group(1).isdigit() else _AMOUNT_WORDS[combo.group(1)]
+        num = f"{whole} {_AMOUNT_WORDS['a ' + combo.group(2)]}"
+    num = _AMOUNT_WORDS.get(num, num)
+    if parse_number(num) is None or parse_number(num) <= 0:
+        return None
+    if not unit:
+        return num
+    unit = unit.strip()
+    value = parse_number(num)
+    singular = {"cups": "cup", "tablespoons": "tablespoon", "teaspoons": "teaspoon", "pounds": "pound", "ounces": "ounce",
+                "cloves": "clove", "cans": "can", "grams": "gram", "slices": "slice", "pieces": "piece", "sticks": "stick",
+                "quarts": "quart", "pints": "pint", "liters": "liter", "milliliters": "milliliter"}.get(unit, unit)
+    plural = {v: k for k, v in {"cups": "cup", "tablespoons": "tablespoon", "teaspoons": "teaspoon", "pounds": "pound",
+                                 "ounces": "ounce", "cloves": "clove", "cans": "can", "grams": "gram",
+                                 "slices": "slice", "pieces": "piece", "sticks": "stick", "quarts": "quart",
+                                 "pints": "pint", "liters": "liter", "milliliters": "milliliter"}.items()}
+    word = plural.get(singular, singular) if value > 1 else singular
+    return f"{num} {word}"
+
+
+def parse_amount_edit(text: str) -> tuple[str, str] | None:
+    """'Use ¾ cup of flour in the original recipe' -> ('flour', '3/4 cup'); otherwise None."""
+    cleaned = _clean(text).rstrip("?")
+    for pattern in _AMOUNT_EDIT_PATTERNS:
+        match = pattern.search(cleaned)
+        if not match:
+            continue
+        amount = spoken_amount(match["num"], match["unit"])
+        ingredient = _strip_phrase(match["ing"]).strip()
+        ingredient = re.sub(r"^(?:of|the)\s+", "", ingredient)
+        if amount and ingredient and len(ingredient) <= 60:
+            return ingredient, amount
+    return None
+
+
+def _recipe_line(recipe: dict, name: str) -> list:
+    """Saved-recipe ingredients that a spoken name refers to (best matches only)."""
+    lines = [{"name": i["name"], "amount": i["amount"], "id": i["id"], "row": i} for i in recipe["ingredients"]]
+    return [line["row"] for line in _mentioned_lines(name, lines)]
+
+
+def amount_changes(recipe: dict, ingredient, new_amount: str) -> list[dict]:
+    """Changes to the saved recipe for a new amount: the ingredient line, plus any step that quotes the old amount."""
+    old = ingredient["amount"]
+    changes = [{"kind": "amount", "id": ingredient["id"], "name": ingredient["name"], "before": old, "after": new_amount}]
+    if old and old != new_amount:
+        noun = re.escape(normalize_name(ingredient["name"])[0].split()[-1] if normalize_name(ingredient["name"])[0] else "")
+        if noun:
+            pattern = re.compile(rf"\b{re.escape(old)}(\s+(?:of\s+)?(?:[a-z-]+\s+){{0,3}}{noun}(?:e?s)?)\b", re.I)
+            for number, step in enumerate(recipe["steps"], start=1):
+                after = pattern.sub(lambda m: new_amount + m.group(1), step["body"])
+                if after != step["body"]:
+                    changes.append({"kind": "step_body", "id": step["id"], "step": number, "before": step["body"],
+                                    "after": after})
+    return changes
+
+
+def amount_proposal(meal: dict, recipe: dict, ingredient, new_amount: str) -> Reply:
+    """A proposed permanent amount change, measured against the saved recipe's own yield."""
+    if new_amount == ingredient["amount"]:
+        return Reply(f"The saved recipe already uses {new_amount} {ingredient['name']}.")
+    if len(new_amount) > LIMITS["amount"]:
+        return Reply("That amount is too long to save. Edit the recipe instead.")
+    changes = amount_changes(recipe, ingredient, new_amount)
+    made = recipe.get("servings")
+    factor = servings_factor(meal.get("servings"), made)
+    tonight = ""
+    if factor != 1 and made:
+        from app.scaling import scale_amount
+        tonight = f" Tonight's {meal['servings']} servings will show {scale_amount(new_amount, factor)}."
+    base = f" (it makes {made} servings)" if made else ""
+    return Reply(f"Here's the change for the saved recipe{base}: {ingredient['name']}, {ingredient['amount'] or 'no amount'} "
+                 f"becomes {new_amount}. Nothing is saved until you confirm.{tonight}",
+                 kind="proposal", changes=changes, data={"ingredient": ingredient["name"], "after": new_amount})
+
+
+def amount_edit_reply(meal: dict, recipe: dict, text: str, ingredient_name: str, new_amount: str) -> Reply:
+    found = _recipe_line(recipe, ingredient_name)
+    if not found:
+        return Reply(f"I couldn't find {ingredient_name} in the saved recipe, so there's nothing to change.")
+    if len(found) > 1:
+        names = " or ".join(f["name"] for f in found[:3])
+        return Reply(f"Which one do you mean: {names}?", kind="clarify",
+                     data={"pending": {"type": "amount_which", "after": new_amount,
+                                       "options": [{"id": f["id"], "name": f["name"]} for f in found[:3]]}})
+    ingredient = found[0]
+    cleaned = _clean(text)
+    factor = servings_factor(meal.get("servings"), recipe.get("servings"))
+    says_original = re.search(r"\b(original|saved|as written)\b", cleaned)
+    if not _PERMANENT.search(cleaned):
+        return Reply("Do you want me to change the saved recipe from now on, or is that just for tonight?",
+                     kind="clarify", data={"pending": {"type": "amount", "id": ingredient["id"], "after": new_amount}})
+    if factor != 1 and not says_original:
+        return Reply(f"Is {new_amount} for the original recipe ({recipe['servings']} servings), or for tonight's "
+                     f"{meal['servings']}?", kind="clarify",
+                     data={"pending": {"type": "amount_basis", "id": ingredient["id"], "after": new_amount}})
+    return amount_proposal(meal, recipe, ingredient, new_amount)
+
+
+def _ingredient_by_id(recipe: dict, ingredient_id):
+    return next((i for i in recipe["ingredients"] if i["id"] == ingredient_id), None)
+
+
+# Common swaps, so "from now on, use panko" knows what panko replaces.
+_SWAPS = {
+    "panko": ["breadcrumbs", "bread crumbs", "crumbs"], "breadcrumbs": ["panko"], "bread crumbs": ["panko"],
+    "greek yogurt": ["sour cream", "mayonnaise"], "sour cream": ["greek yogurt"], "margarine": ["butter"],
+    "butter": ["margarine", "oil"], "olive oil": ["vegetable oil", "canola oil", "oil"], "avocado oil": ["oil"],
+    "brown rice": ["white rice", "rice"], "turkey": ["beef"], "ground turkey": ["ground beef"],
+    "honey": ["sugar", "maple syrup"], "maple syrup": ["honey", "sugar"], "almond milk": ["milk"], "oat milk": ["milk"],
+    "coconut milk": ["cream", "milk"], "half and half": ["cream", "milk"], "chicken thighs": ["chicken breasts"],
+    "chicken breasts": ["chicken thighs"], "shallots": ["onion"], "kale": ["spinach"], "spinach": ["kale"],
+}
+
+
+def implied_substitution(recipe: dict, text: str) -> tuple[str, str] | None:
+    """'From now on, use panko' -> ('breadcrumbs', 'panko') when the recipe has exactly one likely match."""
+    cleaned = _clean(text).rstrip("?")
+    match = re.search(r"\b(?:use|using|switch to|go with)\s+(?P<new>[a-z][a-z' -]{1,40}?)(?:\s+(?:from now on|going forward|"
+                      r"permanently|always|every time|in the (?:saved |original )?recipe|for next time))?$", cleaned)
+    if not match or not _PERMANENT.search(cleaned) or re.search(r"\d", cleaned):
+        return None
+    new = _strip_phrase(match["new"])
+    if not new or any(new in normalize_name(i["name"])[0] for i in recipe["ingredients"]):
+        return None
+    candidates = list(_SWAPS.get(new, []))
+    head = new.split()[-1]
+    candidates += [i["name"] for i in recipe["ingredients"] if head in normalize_name(i["name"])[0].split()]
+    found = []
+    for candidate in candidates:
+        for ing in recipe["ingredients"]:
+            key = normalize_name(ing["name"])[0]
+            if candidate in key or key in candidate:
+                old = candidate if candidate in key else key
+                if old not in [f for f in found]:
+                    found.append(old)
+    found = list(dict.fromkeys(found))
+    return (found[0], new) if len(found) == 1 else None
+
+
 # ---- Ingredient amount questions ----
 
 _NOT_NAMES = {"fresh", "ground", "white", "black", "red", "green", "yellow", "large", "small", "medium", "dried",
@@ -339,8 +515,8 @@ def _model_reply(raw: str) -> dict:
 
 
 def ask_model(ask, meal: dict, recipe: dict, lines: list[dict], steps: list[str],
-              history: list[dict], text: str) -> Reply:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT + recipe_context(meal, recipe, lines, steps)}]
+              history: list[dict], text: str, extra: str = "") -> Reply:
+    messages = [{"role": "system", "content": SYSTEM_PROMPT + recipe_context(meal, recipe, lines, steps) + extra}]
     for message in history[-HISTORY_FOR_MODEL:]:
         messages.append({"role": message["role"], "content": message["body"]})
     messages.append({"role": "user", "content": text})
@@ -394,6 +570,47 @@ def _answer_pending(pending: dict, text: str, meal: dict, recipe: dict) -> Reply
         if _TONIGHT_ONLY.search(cleaned) or re.search(r"\b(no|nope|just|only|question|asking)\b", cleaned):
             return Reply(f"Got it. Tonight, use {new} in place of {old}. The saved recipe stays the same.")
         return None
+    if pending.get("type") in ("amount", "amount_basis"):
+        ingredient = _ingredient_by_id(recipe, pending.get("id"))
+        if ingredient is None:
+            return Reply("The recipe changed since I asked, so I didn't change anything.")
+        after = pending.get("after", "")
+        if pending["type"] == "amount":
+            if _PERMANENT.search(cleaned) or re.search(r"\b(yes|yeah|yep|save|saved|recipe|permanent|from now on|always)\b", cleaned):
+                factor = servings_factor(meal.get("servings"), recipe.get("servings"))
+                if factor != 1:
+                    return Reply(f"Is {after} for the original recipe ({recipe['servings']} servings), or for tonight's "
+                                 f"{meal['servings']}?", kind="clarify",
+                                 data={"pending": {"type": "amount_basis", "id": ingredient["id"], "after": after}})
+                return amount_proposal(meal, recipe, ingredient, after)
+            if _TONIGHT_ONLY.search(cleaned) or re.search(r"\b(no|nope|just|only)\b", cleaned):
+                return Reply(f"Got it. Tonight, use {after} {ingredient['name']}. The saved recipe stays the same.")
+            return None
+        tonight = re.search(rf"\b(tonight|today|this time|{meal.get('servings') or 'x'}|"
+                            rf"{_number_word(meal.get('servings'))})\b", cleaned)
+        original = re.search(rf"\b(original|saved|recipe|as written|{recipe.get('servings') or 'x'}|"
+                             rf"{_number_word(recipe.get('servings'))})\b", cleaned)
+        if tonight and not original:
+            from app.scaling import scale_amount
+            factor = servings_factor(meal.get("servings"), recipe.get("servings"))
+            base = scale_amount(after, 1 / factor) if factor else after
+            return amount_proposal(meal, recipe, ingredient, base)
+        if original:
+            return amount_proposal(meal, recipe, ingredient, after)
+        return None
+    if pending.get("type") == "amount_which":
+        for option in pending.get("options", []):
+            if any(w in cleaned for w in normalize_name(option["name"])[0].split() if len(w) > 2):
+                ingredient = _ingredient_by_id(recipe, option["id"])
+                if ingredient:
+                    return amount_edit_reply(meal, recipe, "from now on in the saved recipe", ingredient["name"],
+                                             pending.get("after", ""))
+        return None
+    if pending.get("type") == "swap_target":
+        target = _strip_phrase(re.sub(r"^(?:the|it replaces|replace|instead of)\s+", "", cleaned))
+        if target:
+            return proposal_reply(recipe, target, pending.get("new", ""))
+        return None
     if pending.get("type") == "yield":
         match = re.search(_COUNT, cleaned)
         made = clean_servings(_count(match.group(1))) if match else None
@@ -410,6 +627,11 @@ def _answer_pending(pending: dict, text: str, meal: dict, recipe: dict) -> Reply
 def respond(meal: dict, recipe: dict, lines: list[dict], steps: list[str], history: list[dict], text: str,
             ask) -> Reply:
     """Work out the reply (and any action) for one message about this planned dinner."""
+    return local_reply(meal, recipe, lines, history, text) or ask_model(ask, meal, recipe, lines, steps, history, text)
+
+
+def local_reply(meal: dict, recipe: dict, lines: list[dict], history: list[dict], text: str) -> Reply | None:
+    """Everything the app answers itself, without the model (works offline). None means "ask the model"."""
     last = history[-1] if history else None
     if last and last["role"] == "assistant" and last["kind"] == "clarify":
         pending = json.loads(last["data_json"] or "{}").get("pending")
@@ -429,7 +651,17 @@ def respond(meal: dict, recipe: dict, lines: list[dict], steps: list[str], histo
             return Reply("I can set a dinner for 1 to 100 servings.")
         return _servings_reply(meal, recipe, servings)
 
-    substitution = parse_substitution(text)
+    amount_edit = parse_amount_edit(text)
+    if amount_edit:
+        return amount_edit_reply(meal, recipe, text, *amount_edit)
+
+    substitution = parse_substitution(text) or implied_substitution(recipe, text)
+    if substitution is None and _PERMANENT.search(_clean(text)):
+        bare = re.search(r"\b(?:use|using|switch to)\s+(?P<new>[a-z][a-z' -]{1,40})$", _strip_phrase(_clean(text)))
+        if bare and not re.search(r"\d", text):
+            new = _strip_phrase(bare["new"])
+            return Reply(f"Which ingredient should {new} replace in the saved recipe?", kind="clarify",
+                         data={"pending": {"type": "swap_target", "new": new}})
     if substitution:
         old, new = substitution
         cleaned = _clean(text)
@@ -444,5 +676,4 @@ def respond(meal: dict, recipe: dict, lines: list[dict], steps: list[str], histo
     answer = quantity_reply(text, meal, recipe, lines)
     if answer:
         return answer
-
-    return ask_model(ask, meal, recipe, lines, steps, history, text)
+    return None

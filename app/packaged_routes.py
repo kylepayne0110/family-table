@@ -150,8 +150,10 @@ def packaged_page(request: Request, conn: sqlite3.Connection, meal: dict, sessio
                   message: str = "", error: str = "", status_code: int = 200):
     """What either phone sees when opening a planned packaged meal."""
     today = household_today(request)
+    from app.meal_routes import _cook_context, _packaged_steps
+    item = packaged.get_packaged(conn, meal["id"])
     return render(request, "packaged_meal.html", {
-        "meal": meal, "item": packaged.get_packaged(conn, meal["id"]), "nav_active": "plan",
+        "meal": meal, "item": item, "nav_active": "plan", **_cook_context(conn, meal, _packaged_steps(item)),
         "week_iso": meal["week_start"], "is_past": meal["date"] < today, "is_tonight": meal["date"] == today,
         "message": message, "error": error, "max_upload_mb": request.app.state.settings.max_upload_mb,
         "source_url": packaged.OFF_PAGE_URL, "table_id": meal["table_id"],

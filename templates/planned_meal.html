@@ -16,6 +16,8 @@
 {% block scripts %}
 <script src="{{ static_url('js/checklist.js') }}" defer></script>
 <script src="{{ static_url('js/meal.js') }}" defer></script>
+<script src="{{ static_url('js/voice.js') }}" defer></script>
+<script src="{{ static_url('js/cook.js') }}" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -33,7 +35,8 @@
 
     <div class="planned__actions">
         <a class="btn btn-outline" href="/plan/meals/{{ meal.id }}/ingredients" data-checklist-open>{{ icon("basket", 18) }}Add ingredients</a>
-        <a class="btn btn-primary" href="#assistant" data-assistant-open aria-controls="assistant">{{ icon("chat", 18) }}Cooking Assistant</a>
+        <a class="btn btn-outline" href="#assistant" data-assistant-open aria-controls="assistant">{{ icon("chat", 18) }}Cooking Assistant</a>
+        <a class="btn btn-primary btn-cook" href="#cook" data-cook-start aria-controls="cook">{{ icon("mic", 18) }}Cook with me</a>
     </div>
 
     <p class="sync-status" data-meal-status role="status" aria-live="polite" hidden></p>
@@ -44,6 +47,7 @@
 </article>
 
 {% include "_checklist_dialog.html" %}
+{% include "_cook_panel.html" %}
 
 {#- The assistant panel: over the recipe on phones, beside it on wide screens. Without JavaScript,
     #assistant in the address bar shows it (CSS :target). #}

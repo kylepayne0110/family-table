@@ -232,3 +232,22 @@ async def account_action(request: Request, action: str, session: auth.Session = 
         auth.end_other_sessions(conn, session.user_id, session.token_hash)
         return redirect("/account?msg=signed-out-others")
     raise HTTPException(status_code=404, detail="We couldn't find that page.")
+
+
+# ---- Diagnostics from the page (fixed codes only; never content) ----
+
+DIAG_CODES = {"mic_denied", "mic_unavailable", "speech_unavailable", "speech_network", "tts_unavailable",
+              "voice_connection_lost"}
+
+
+@router.post("/diag")
+async def client_diagnostic(request: Request, session: auth.Session = Depends(auth.require_session)):
+    """A phone reports a voice problem so the maintainer can see it in the server log."""
+    form = await auth.read_form_with_csrf(request, session.csrf_token)
+    code = str(form.get("code") or "")
+    if code in DIAG_CODES and not auth.too_many(request, "voice", f"diag:{session.user_id}"):
+        import logging
+        logging.getLogger("family_table.voice").warning("client reported %s (user %s, %s)", code, session.user_id,
+                                                        auth.device_label(request.headers.get("user-agent", "")))
+    from fastapi.responses import Response
+    return Response(status_code=204)
