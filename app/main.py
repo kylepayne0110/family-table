@@ -1,8 +1,10 @@
 # asynccontextmanager defines startup/shutdown work for the app.
 from contextlib import asynccontextmanager
 
-# logging reports startup problems and upgrades.
+# logging reports startup problems and upgrades; os and re configure it.
 import logging
+import os
+import re
 
 # FastAPI creates our web application and handles HTTP requests.
 # Request represents an incoming request from the browser.
@@ -80,9 +82,39 @@ class BodySizeLimit:
         return await self.app(scope, limited_receive, send)
 
 
+class RedactSecrets(logging.Filter):
+    """Keep one-time links out of the access log: /invite/<token>, /reset/<token>, ?invite=<token>."""
+
+    PATTERN = re.compile(r"(/(?:invite|reset)/)[^\s/?\"]+|((?:\?|&)invite=)[^\s&\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(self.PATTERN.sub(lambda m: (m.group(1) or m.group(2)) + "[redacted]", a)
+                                if isinstance(a, str) else a for a in record.args)
+        return True
+
+
+def setup_logging() -> None:
+    """Family Table's own diagnostics (access denied, Ollama unreachable, voice problems) on stderr.
+
+    Logged: ids, fixed codes, and settings. Never passwords, tokens, raw audio, or what families say.
+    """
+    app_log = logging.getLogger("family_table")
+    if not app_log.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app_log.addHandler(handler)
+        app_log.setLevel(os.getenv("FAMILY_TABLE_LOG_LEVEL", "INFO").upper())
+        app_log.propagate = False
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactSecrets) for f in access.filters):
+        access.addFilter(RedactSecrets())
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app (tests pass their own settings and data folder)."""
     settings = settings or load_settings()
+    setup_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

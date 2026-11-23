@@ -15,6 +15,7 @@ class FakeOllama:
     def __init__(self):
         self.calls: list[dict] = []
         self.delay = 0.0
+        self.down = False
         self.reply = lambda body: {"reply": "Keep it at a gentle simmer.", "action": "none"}
         outer = self
 
@@ -23,6 +24,10 @@ class FakeOllama:
                 length = int(self.headers.get("content-length") or 0)
                 body = json.loads(self.rfile.read(length) or b"{}")
                 outer.calls.append(body)
+                if outer.down:          # Ollama stopped: the app should say so and keep working
+                    self.send_response(503)
+                    self.end_headers()
+                    return
                 if outer.delay:
                     time.sleep(outer.delay)
                 content = outer.reply(body)

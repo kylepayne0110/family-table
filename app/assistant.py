@@ -527,13 +527,20 @@ def ask_model(ask, meal: dict, recipe: dict, lines: list[dict], steps: list[str]
 
     reply = str(data.get("reply") or "").strip()[:2000]
     action = data.get("action")
+    said = _clean(text)
+    # The model can only act on what the cook actually said. Text inside a recipe (or a saved
+    # community copy) can't change servings or start an edit on its own.
     if action == "set_servings":
         servings = clean_servings(data.get("servings"))
-        if servings:
+        asked = re.search(r"\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|dozen|double|"
+                          r"twice|half|guests?|people|extra|more|fewer|less|serv\w*|feed\w*)\b", said)
+        if servings and asked:
             return _servings_reply(meal, recipe, servings)
+        action = "none"
     if action == "propose_edit":
         for swap in data.get("replacements") or []:
-            if isinstance(swap, dict) and swap.get("old") and swap.get("new"):
+            if isinstance(swap, dict) and swap.get("old") and swap.get("new") and \
+                    all(w in said for w in re.findall(r"[a-z]{3,}", str(swap["new"]).lower())[:3]):
                 proposal = proposal_reply(recipe, str(swap["old"]).strip()[:80], str(swap["new"]).strip()[:80])
                 if proposal.kind == "proposal":
                     return proposal

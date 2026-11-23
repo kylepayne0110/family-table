@@ -53,11 +53,16 @@ def fake_ollama():
 @pytest.fixture(scope="module")
 def server(tmp_path_factory, fake_ollama):
     data = tmp_path_factory.mktemp("browser-data")
+    yield from start_server(data, fake_ollama)
+
+
+def start_server(data, fake_ollama, extra_env=None):
+    """Run the real app with Uvicorn on a free port against `data` (a throwaway folder)."""
     port = _free_port()
     env = {**os.environ, "FAMILY_TABLE_DATA_DIR": str(data), "FAMILY_USERNAME": OWNER,
            "FAMILY_PASSWORD_HASH": hash_password(OWNER_PASSWORD), "FAMILY_DISPLAY_NAME": "Kyle",
            "FAMILY_TABLE_NAME": "Payne's Table", "COOKIE_SECURE": "false", "OLLAMA_URL": fake_ollama.url,
-           "OLLAMA_TIMEOUT_SECONDS": "20", "HOUSEHOLD_TIMEZONE": "America/Chicago"}
+           "OLLAMA_TIMEOUT_SECONDS": "20", "HOUSEHOLD_TIMEZONE": "America/Chicago", **(extra_env or {})}
     log = open(data / "server.log", "w")  # noqa: SIM115 - closed below
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port",
                              str(port), "--workers", "1"], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)

@@ -56,7 +56,8 @@ _NOT_FOOD = {"chunks", "pieces", "bits", "strips", "cubes", "slices", "half", "h
              "oven", "skillet", "tray", "sheet", "dish", "plate", "fridge", "freezer", "minutes", "minute", "hours",
              "hour", "water bath", "the oven", "it", "them", "that", "this", "a bowl", "a pan", "the pan", "the bowl",
              "batches", "half an hour", "the fridge", "foil", "parchment", "a baking sheet", "a sheet pan", "heat",
-             "medium heat", "high heat", "low heat", "the middle", "the side", "salt water"}
+             "medium heat", "high heat", "low heat", "the middle", "the side", "salt water", "people", "persons",
+             "servings", "portions", "guests", "kids", "adults", "of us", "family", "the family", "the whole family"}
 _COUNTABLE = re.compile(r"\b(breasts?|thighs?|eggs?|onions?|cloves?|tortillas?|potatoes|potato|carrots?|lemons?|limes?|"
                         r"apples?|bananas?|tomatoes|tomato|peppers?|buns?|slices?|cans?|links?|sausages?|fillets?|chops?|"
                         r"wings?|drumsticks?|shallots?|jalape[nñ]os?|avocados?|zucchinis?|cucumbers?|leaves|leaf|"
@@ -218,7 +219,9 @@ _CREDIT_PATTERNS = [
 ]
 _SERVINGS = re.compile(r"\b(?:feeds?|serves?|makes?|enough for|it's for|for)\s+(?:a family of\s+|about\s+|around\s+)?"
                        r"(?P<n>\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b"
-                       r"(?:\s+(?:people|servings|portions|of us|adults|kids))?")
+                       r"(?:\s+(?:people|servings|portions|of us|adults|kids))?|"
+                       r"\b(?:enough for|feeds?|serves?)\b[^.]*?\b(?P<n2>\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|"
+                       r"eleven|twelve)\s+(?:people|servings|portions|of us)\b")
 _MINUTES = r"(?P<n>\d{1,4}|an?|one|two|three|four|five|ten|fifteen|twenty|thirty|forty|forty five|fifty|sixty|half an?)\s*(?P<u>minutes?|mins?|hours?|hrs?)"
 _PREP = re.compile(rf"\b(?:prep(?:aration)?(?: time)?(?: is| takes| of)?|takes)\s+(?:about\s+|around\s+)?{_MINUTES}(?:\s+to prep| of prep| prep)?|"
                    rf"{_MINUTES.replace('?P<n>', '?P<n2>').replace('?P<u>', '?P<u2>')}\s+(?:of\s+)?prep")
@@ -344,7 +347,7 @@ def understand(text: str, form: dict, voice: dict) -> Edits:
 
 
 def _sentence(edits: Edits, s: str) -> None:
-    s = re.sub(r"^(?:um+|uh+|so|okay|ok|alright|well|and|oh)[, ]+", "", s).strip()
+    s = re.sub(r"^(?:(?:um+|uh+|so|okay|ok|alright|well|and|oh|also)[, ]+)+", "", s).strip()
     if not s:
         return
     # Corrections: "actually, make that three chicken breasts"
@@ -399,7 +402,7 @@ def _sentence(edits: Edits, s: str) -> None:
             return
     serving = _SERVINGS.search(s)
     if serving and not re.search(r"\bminutes?\b|\bhours?\b", s[serving.start():serving.end() + 12]):
-        number = _number(serving["n"])
+        number = _number(serving["n"] or serving["n2"])
         if number:
             edits.set("servings", str(int(number)), overwrite=True)
             if serving.start() == 0 or re.match(r"^(?:it|they|this|that|the recipe)\s", s):
@@ -426,7 +429,8 @@ def _sentence(edits: Edits, s: str) -> None:
             edits.set("note_body", body[:1].upper() + body[1:] + ("" if body.endswith(".") else "."), overwrite=True)
         return
     listed = re.match(r"^(?:the )?ingredients (?:are|is)[: ]+(?P<list>.+)$|^(?:i|we|you)\s+(?:use|need|take|get|grab|buy|"
-                      r"start with)\s+(?P<list2>.+)$|^(?:you'll need|it needs|it takes)\s+(?P<list3>.+)$", s)
+                      r"start with)\s+(?P<list2>.+)$|^(?:you'll need|it needs|it takes|there's|there is|there are|"
+                      r"it has|it's got|plus|also)\s+(?:also\s+)?(?P<list3>.+?)(?:\s+in (?:the|it|there)\b.*|\s+too)?$", s)
     clauses = _clauses(s)
     if listed:
         first = listed["list"] or listed["list2"] or listed["list3"]
@@ -650,26 +654,28 @@ def next_question(form: dict, voice: dict) -> tuple[str, dict | None]:
 
 MODEL_SCHEMA = {
     "type": "object",
-    "properties": {"edits": {"type": "array", "items": {"type": "object", "properties": {
-        "action": {"type": "string", "enum": ["set_field", "add_ingredient", "change_ingredient", "remove_ingredient",
-                                              "add_step", "none"]},
-        "field": {"type": "string"}, "value": {"type": "string"},
-        "amount": {"type": "string"}, "name": {"type": "string"}, "match": {"type": "string"},
-        "step": {"type": "string"}}, "required": ["action"]}}},
-    "required": ["edits"],
+    "properties": {
+        "ingredients": {"type": "array", "items": {"type": "object", "properties": {
+            "amount": {"type": "string"}, "name": {"type": "string"}}, "required": ["amount", "name"]}},
+        "steps": {"type": "array", "items": {"type": "string"}},
+        "servings": {"type": ["integer", "null"]},
+        "cook_minutes": {"type": ["integer", "null"]},
+    },
+    "required": ["ingredients", "steps"],
 }
 
-MODEL_PROMPT = """You turn what a home cook says into edits for a recipe form. Only use what they actually said; never invent
-amounts, ingredients, or steps. The form fields are: name, description, servings (number), prep_minutes (number),
-cook_minutes (number), category (one of: {categories}), cuisine, creator_credit (who created the recipe), note_body.
-Current form:
-{form}
-The cook just said: "{text}"
-Respond only with JSON: {{"edits": [{{"action": "set_field", "field": "servings", "value": "4"}},
-{{"action": "add_ingredient", "amount": "2", "name": "chicken breasts"}},
-{{"action": "change_ingredient", "match": "chicken breasts", "amount": "3"}},
-{{"action": "remove_ingredient", "match": "salt"}}, {{"action": "add_step", "step": "Cut the chicken into chunks."}}]}}
-Use an empty list if nothing should change."""
+# A flat shape with examples from unrelated dishes: small local models copy example answers
+# that look like the real task (measured with qwen3:1.7b), so the examples are deliberately different.
+MODEL_PROMPT = """Extract recipe details from one thing a cook said. Copy only what they said. Leave lists empty if they didn't mention any.
+
+Example: "Toss in a handful of basil and simmer it for ten minutes"
+{{"ingredients": [{{"amount": "1 handful", "name": "basil"}}], "steps": ["Simmer it for ten minutes."], "servings": null, "cook_minutes": null}}
+
+Example: "It feeds six"
+{{"ingredients": [], "steps": [], "servings": 6, "cook_minutes": null}}
+
+Now: "{text}"
+"""
 
 
 def form_summary(form: dict) -> str:
@@ -682,10 +688,9 @@ def form_summary(form: dict) -> str:
 
 
 def model_edits(ask, text: str, form: dict, voice: dict) -> Edits:
-    """Edits the model suggests, each checked against real fields and rows. Malformed output changes nothing."""
+    """Edits the model suggests, each checked against what was said. Malformed output changes nothing."""
     edits = Edits(form, voice)
-    raw = ask([{"role": "user", "content": MODEL_PROMPT.format(categories=", ".join(CATEGORIES), form=form_summary(form),
-                                                              text=text[:600].replace('"', "'"))}], MODEL_SCHEMA)
+    raw = ask([{"role": "user", "content": MODEL_PROMPT.format(text=text[:600].replace('"', "'"))}], MODEL_SCHEMA)
     raw = re.sub(r"<think>.*?</think>", "", raw or "", flags=re.S).strip()
     try:
         data = json.loads(raw)
@@ -695,38 +700,30 @@ def model_edits(ask, text: str, form: dict, voice: dict) -> Edits:
             data = json.loads(match.group(0)) if match else {}
         except ValueError:
             data = {}
-    items = data.get("edits") if isinstance(data, dict) else None
-    if not isinstance(items, list):
+    if not isinstance(data, dict):
         return edits
     spoken = text.lower()
-    for item in items[:20]:
+    for item in (data.get("ingredients") if isinstance(data.get("ingredients"), list) else [])[:15]:
         if not isinstance(item, dict):
             continue
-        action = item.get("action")
-        if action == "set_field":
-            name, value = str(item.get("field") or ""), str(item.get("value") or "")
-            if name == "category":
-                value = next((k for k, label in CATEGORIES.items() if value.lower() in (k, label.lower())), "")
-            if name in SCALAR_FIELDS and value and _grounded(value, spoken, name):
-                edits.set(name, value, overwrite=name in ("servings", "prep_minutes", "cook_minutes"))
-        elif action == "add_ingredient":
-            name, amount = str(item.get("name") or ""), str(item.get("amount") or "")
-            if name and _grounded(name, spoken):
-                edits.ingredient(amount if _grounded(amount, spoken, "amount") else "", name)
-        elif action == "change_ingredient":
-            index = _find_ingredient(edits.form, str(item.get("match") or item.get("name") or ""))
-            amount = str(item.get("amount") or "")
-            if index is not None and amount and _grounded(amount, spoken, "amount"):
-                edits.amount(index, amount[:LIMITS["amount"]])
-        elif action == "remove_ingredient":
-            index = _find_ingredient(edits.form, str(item.get("match") or ""))
-            if index is not None and re.search(r"\b(remove|take out|delete|drop|leave out|no)\b", spoken):
-                row = edits.form["ingredients"].pop(index)
-                edits.ops.append({"op": "remove_ingredient", "index": index, "match": row["name"]})
-        elif action == "add_step":
-            body = " ".join(str(item.get("step") or "").split())
-            if body and _grounded(body, spoken, "step"):
-                edits.step(body[:1].upper() + body[1:])
+        name, amount = " ".join(str(item.get("name") or "").split()), " ".join(str(item.get("amount") or "").split())
+        if not name or not _grounded(name, spoken):
+            continue
+        parsed = parse_item(f"{amount} {name}".strip()) if amount else None
+        if parsed and parsed[0] and name_key(parsed[1]) == name_key(name):
+            amount = parsed[0]          # "half a cup" -> "1/2 cup" only when the whole amount was understood
+        elif amount and not _grounded(amount, spoken, "amount"):
+            amount = ""
+        edits.ingredient(amount[:LIMITS["amount"]], name)
+    for step in (data.get("steps") if isinstance(data.get("steps"), list) else [])[:10]:
+        body = " ".join(str(step or "").split())
+        if body and _grounded(body, spoken, "step"):
+            body = body[:1].upper() + body[1:]
+            edits.step(body if body.endswith((".", "!", "?")) else body + ".")
+    for name in ("servings", "cook_minutes"):
+        value = data.get(name)
+        if isinstance(value, int) and _grounded(str(value), spoken, name):
+            edits.set(name, str(value), overwrite=True)
     return edits
 
 

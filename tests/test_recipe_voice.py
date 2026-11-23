@@ -163,24 +163,24 @@ def test_model_edits_are_checked_against_what_was_said():
     form = clean_form({"name": "Stew", "ingredients": [{"amount": "1 lb", "name": "beef"}]})
 
     def model(messages, response_format=None):
-        return json.dumps({"edits": [
-            {"action": "add_ingredient", "amount": "3", "name": "carrots"},           # said
-            {"action": "add_ingredient", "amount": "2 cups", "name": "red wine"},     # invented
-            {"action": "set_field", "field": "servings", "value": "8"},               # invented number
-            {"action": "set_field", "field": "password", "value": "x"},               # not a field
-            {"action": "change_ingredient", "match": "beef", "amount": "2 lbs"},      # said
-            {"action": "add_step", "step": "Brown the beef in batches."},             # said
-        ]})
-    edits = model_edits(model, "toss in three carrots, and the beef should be 2 lbs, brown the beef in batches",
+        return json.dumps({
+            "ingredients": [{"amount": "3", "name": "carrots"},             # said
+                            {"amount": "2 cups", "name": "red wine"},       # invented
+                            {"amount": "a squeeze", "name": "lemon"}],      # said, odd amount kept as said
+            "steps": ["Brown the beef in batches.", "Deglaze with brandy."],  # one said, one invented
+            "servings": 8,                                                  # invented number
+            "cook_minutes": None})
+    edits = model_edits(model, "toss in three carrots and a squeeze of lemon, then brown the beef in batches",
                         form, clean_voice({}))
-    names = [op.get("name") or op.get("field") or op.get("match") for op in edits.ops]
-    assert "carrots" in names and "beef" in names
-    assert "red wine" not in names and "servings" not in names and "password" not in names
-    assert any(op["op"] == "add_step" for op in edits.ops)
+    assert {"op": "add_ingredient", "amount": "3", "name": "carrots"} in edits.ops
+    assert {"op": "add_ingredient", "amount": "a squeeze", "name": "lemon"} in edits.ops
+    assert {"op": "add_step", "body": "Brown the beef in batches."} in edits.ops
+    flat = json.dumps(edits.ops)
+    assert "red wine" not in flat and "brandy" not in flat and "servings" not in flat
 
 
-@pytest.mark.parametrize("raw", ["not json", "[]", '{"edits": "no"}', '{"edits": [1, null, {"action": "boom"}]}',
-                                 "<think>hmm</think>{\"edits\": [{\"action\": \"set_field\"}]}"])
+@pytest.mark.parametrize("raw", ["not json", "[]", '{"ingredients": "no"}', '{"ingredients": [1, null, {"x": 1}]}',
+                                 "<think>hmm</think>{\"steps\": [null, 5]}", '{"servings": "lots"}'])
 def test_malformed_model_output_changes_nothing(raw):
     edits = model_edits(lambda m, f=None: raw, "something long that the patterns do not cover at all",
                         clean_form({}), clean_voice({}))

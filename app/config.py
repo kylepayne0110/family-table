@@ -59,6 +59,7 @@ class Settings:
     table_name: str = ""
     # How many model requests may run at once (the rest get "busy, try again" right away).
     model_concurrency: int = 2
+    ollama_keep_alive: str = "30m"
 
     @property
     def zone(self) -> ZoneInfo:
@@ -112,4 +113,5 @@ def load_settings() -> Settings:
         display_name=(os.getenv("FAMILY_DISPLAY_NAME") or "").strip()[:60],
         table_name=(os.getenv("FAMILY_TABLE_NAME") or "").strip()[:60],
         model_concurrency=max(1, int(os.getenv("OLLAMA_MAX_CONCURRENT") or 2)),
+        ollama_keep_alive=(os.getenv("OLLAMA_KEEP_ALIVE") or "30m").strip(),
     )

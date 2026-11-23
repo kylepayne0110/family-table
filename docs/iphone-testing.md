@@ -60,12 +60,46 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 
 - [ ] Tap a planned dinner's name: the recipe opens with **Cooking for** −/+ buttons. Changing servings updates the amounts straight away; **Reset** goes back.
 - [ ] **Cooking Assistant** opens full screen. **Back to recipe** returns to the same scroll position.
-- [ ] Ask "How much chicken do I need tonight?" and "How many cups are in one US quart?".
-- [ ] Say "Make this for eight tonight": the servings and amounts change underneath.
-- [ ] Say "From now on use panko instead of breadcrumbs": a list of changes with **Confirm** and **Cancel** appears. Nothing is saved until Confirm.
-- [ ] Lock the phone mid-conversation, unlock, and reopen: the conversation is still there.
-- [ ] Tap the microphone: Safari asks for microphone (and speech recognition) permission. Allow it and speak a question. Then deny it in Settings → Safari → Microphone and check the message says typing still works.
+- [ ] Type "How much chicken do I need tonight?" and "How many cups are in one US quart?".
 - [ ] Stop Ollama on the computer and ask a question that needs the model: a clear "can't reach the local cooking model" message appears, and servings and **Add ingredients** still work.
+
+## 5c. Cook with me (voice), about 10 minutes, phone propped up as if cooking
+
+Use a recipe with several steps, planned for today. Turn the volume up.
+
+1. [ ] Open the dinner from the Meal Plan and tap **Cook with me**. Safari asks for the microphone (and speech recognition): **Allow**. You hear "How can I help?" and the circle says **Listening**.
+2. [ ] Say "Walk me through it." It reads **only step 1**, then waits. The step is highlighted on the recipe.
+3. [ ] Say "next." Step 2. Say "repeat that." Step 2 again. Say "go back." Step 1.
+4. [ ] While it's reading a step, say "How much flour?" (use an ingredient in the recipe). It stops talking, answers with tonight's amount, and says you're still on that step. Say "next": it continues from the right step.
+5. [ ] Tap the circle while it's talking: it stops at once and listens.
+6. [ ] Say "Make this for eight tonight." The **Cooking for** number on screen changes to 8.
+7. [ ] Say "Read me the whole recipe." It reads all ingredients and steps (this is the only time it reads everything).
+8. [ ] Say "From now on, use 3/4 cup of flour in the original recipe" (or a swap like "from now on, use panko"). It describes the change and asks whether to save it. Say "no, cancel": nothing changes. Ask again and say "yes, save it": it says Saved, and **Recipe card** shows the new amount for the original servings.
+9. [ ] Check it never treats its own voice as a command: it shouldn't answer itself after it finishes talking.
+10. [ ] Lock the phone for 30 seconds, unlock: the panel says **Paused**. Tap the circle and say "repeat": the same step as before.
+11. [ ] Close Safari completely, reopen the dinner: the conversation is in Cooking Assistant, and Cook with me offers to pick up at the same step.
+12. [ ] **Mute**: the microphone indicator in the status bar goes away. **End**: the panel closes and the microphone is released.
+13. [ ] Settings → Safari → Microphone → Deny for this site, then tap Cook with me: it says the microphone is off; **Next / Repeat / Back** and typing still work.
+
+Note anything misheard or slow; it helps tune the phrases it understands.
+
+## 5d. Tell me the recipe (voice on Add a recipe), about 5 minutes
+
+1. [ ] **Recipes → + Add → Tell me the recipe.** Say, in one go: "These are Grandma's chicken nuggets. They feed four. I use two chicken breasts, cut them into chunks, and coat them in breadcrumbs." The name, **Created by** (Grandma), Servings (4), two ingredients, and two steps fill in as you talk, without interrupting you.
+2. [ ] Say "Actually, make that three chicken breasts." The same row changes to 3.
+3. [ ] Say "I don't measure the salt," then "that's it." It asks one question at a time, e.g. about the breadcrumbs' amount, and offers "to taste" for the salt. Answer, and say "skip" for times.
+4. [ ] Type something into Description while the helper is open, then keep talking: your typing stays.
+5. [ ] Tap **Undo**: the last change goes back.
+6. [ ] Say "That sounds good," tap **Close**: nothing has been added to Recipes yet. Leave the page and come back to Add a recipe: it offers **Pick up where you left off**, with a chosen photo still there.
+7. [ ] Press **Save recipe**: only now does it join the recipe book.
+8. [ ] Try it on a recipe from **Import from a website**: corrections apply to the imported fields.
+
+## 5e. Accounts and Tables (two phones)
+
+- [ ] Phone A: tap the Table name in the dark bar → **Make an invite link** → Share/Copy it to Phone B.
+- [ ] Phone B (signed out): open the link. It says "**Kyle invited you to Payne's Table**". **Create an account and join**: it lands straight in Payne's Table with the same recipes.
+- [ ] Phone A: **Table settings → Members → Remove** Phone B's person (read the confirmation). Phone B, on the Meal Plan, shows "You no longer have access to this Table" within about 10 seconds.
+- [ ] Phone B: start a second Table from Welcome; now tapping the Table name shows a switcher with a check by the current one.
 
 ## 6. Shopping List (both phones open on the list)
 
@@ -88,7 +122,8 @@ Use **Safari**. Other iPhone browsers can add home-screen icons on newer iOS ver
 
 ## 8. Signing out
 
-- [ ] **Sign out** returns to the sign-in page, and the list can't be opened again until you sign in.
+- [ ] **Account → Sign out of this device** returns to the sign-in page, and the list can't be opened again until you sign in.
+- [ ] **Account → Signed-in devices** lists both phones; **Sign out** next to the other one signs it out.
 
 ## If something's wrong
 
