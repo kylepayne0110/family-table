@@ -6,6 +6,11 @@
 
 {% block title %}{{ "Edit " ~ recipe.name if editing else "Add a recipe" }} · Family Table{% endblock %}
 
+{% block scripts %}
+<script src="{{ static_url('js/voice.js') }}" defer></script>
+<script src="{{ static_url('js/recipe_voice.js') }}" defer></script>
+{% endblock %}
+
 {% block header %}
 <header class="site-header">
     <div class="header-inner header-inner--page">
@@ -49,6 +54,11 @@
     </h1>
 </header>
 
+<div class="voice-launch">
+    <button type="button" class="btn btn-primary btn-cook" data-recipe-voice-start hidden>{{ icon("mic", 18) }}Tell me the recipe</button>
+    <p class="field-hint" data-recipe-voice-note hidden>Talk it through and I'll fill in the form as you go. You review it and press Save; nothing is saved by talking.</p>
+</div>
+
 {% if not editing %}
 <section class="import-card{% if import_error %} has-error{% endif %}" aria-labelledby="import-title">
     <div class="import-card__text">
@@ -88,10 +98,14 @@
     <p>{% if ai_offline %}The local assistant isn't answering, so only the name and your ingredients are filled in.{% else %}Check the amounts, times, and steps, and change anything you like.{% endif %} Nothing is added to your recipes until you press Save.</p>
 </div>
 {% endif %}
+<div class="import-notice ai-notice" data-ai-voice-notice role="status" hidden>
+    <p class="import-notice__title">Parts of this were suggested by the AI assistant.</p>
+    <p>Check the amounts, times, and steps. Nothing is added to your recipes until you press Save.</p>
+</div>
 {% if recoverable %}
 <div class="import-notice draft-notice" role="status" data-draft-recover>
-    <p class="import-notice__title">You have an unsaved recipe{% if recoverable.fields.name %}: &ldquo;{{ recoverable.fields.name }}&rdquo;{% endif %}.</p>
-    <p><a class="btn btn-outline btn-sm" href="/recipes/new?draft={{ recoverable.id }}">Pick up where you left off</a></p>
+    <p class="import-notice__title">You have unsaved {{ "changes to this recipe" if editing else "work" }}{% if recoverable.fields.name and not editing %}: &ldquo;{{ recoverable.fields.name }}&rdquo;{% endif %} from {{ recoverable.updated_at[:16] }} UTC.</p>
+    <p><a class="btn btn-outline btn-sm" href="{{ '/recipes/%d/edit' | format(recipe.id) if editing else '/recipes/new' }}?draft={{ recoverable.id }}">Pick up where you left off</a></p>
 </div>
 {% endif %}
 
@@ -104,7 +118,12 @@
 </div>
 {% endif %}
 
-<form class="recipe-form" method="post" enctype="multipart/form-data"
+{% include "_recipe_voice_panel.html" %}
+<p class="sync-status draft-status" data-draft-status role="status" aria-live="polite" hidden></p>
+
+<form class="recipe-form" method="post" enctype="multipart/form-data" data-recipe-form
+      data-editing="{{ '1' if editing else '' }}" data-recipe-id="{{ recipe.id if editing else '' }}"
+      data-draft-rev="{{ draft_rev or '' }}" data-draft-voice="{{ draft_voice or '{}' }}"
       action="{{ '/recipes/%d/edit' | format(recipe.id) if editing else '/recipes/new' }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="table_id" value="{{ table_id }}">
@@ -207,8 +226,8 @@
                 <input id="photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" data-photo-input>
                 <p class="field-hint">JPEG, PNG, or WebP, up to {{ request.app.state.settings.max_upload_mb }} MB. Large photos are resized automatically.</p>
                 {% if errors.photo %}<p class="field-error">{{ errors.photo }}</p>{% endif %}
+                <input type="hidden" name="imported_photo" value="{{ values.imported_photo }}" data-imported-photo>
                 {% if values.imported_photo %}
-                <input type="hidden" name="imported_photo" value="{{ values.imported_photo }}">
                 <label class="check-row check-row--small">
                     <input type="checkbox" name="discard_imported_photo">
                     <span>Don't use the imported photo</span>

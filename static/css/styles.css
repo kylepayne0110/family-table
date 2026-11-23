@@ -2499,3 +2499,11 @@ body.assistant-open { overflow: hidden; }
 .cook__privacy { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
 .step.is-current { background: rgba(212, 106, 90, 0.08); outline: 2px solid var(--rule-red); outline-offset: 4px; border-radius: var(--radius); }
 body.cook-open { padding-bottom: 60vh; }
+
+/* ==== Recipe voice helper ==== */
+.voice-launch { display: grid; gap: 6px; margin: 0 0 24px; justify-items: start; }
+.rvoice__filled { font-size: 14.5px; color: var(--note-ink); min-height: 1.4em; }
+.is-voice-filled { animation: voice-filled 1.6s ease-out; }
+@keyframes voice-filled { from { background-color: rgba(63, 125, 78, 0.22); } to { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .is-voice-filled { animation: none; outline: 2px solid #3F7D4E; } }
+.draft-status { margin: 0 0 12px; }

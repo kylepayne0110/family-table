@@ -24,6 +24,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import ollama, tables
 from app.account_routes import router as account_router
 from app.community_routes import router as community_router
+from app.draft_routes import router as draft_router
 from app.model_gate import ModelGate
 from app.auth import LoginRequired, default_limiters
 from app.clock import HouseholdClock
@@ -115,6 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(account_router)  # Welcome, Tables, invites, Account
     app.include_router(community_router)  # Community, sharing a recipe, ideas from what's on hand
+    app.include_router(draft_router)      # recipe drafts and the recipe form's voice helper
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
     app.include_router(meal_router)  # one planned dinner: servings, Add ingredients, Cooking Assistant
     app.include_router(packaged_router)  # scan a packaged meal for one dinner

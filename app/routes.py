@@ -1,6 +1,7 @@
 # Sign-in, sign-up, recipes, and photos.
 
-# logging records access problems (ids only).
+# json passes a draft's voice notes to the page; logging records access problems (ids only).
+import json
 import logging
 
 # secrets creates the pre-login CSRF token.
@@ -572,6 +573,7 @@ def new_recipe_form(request: Request, draft: int | None = None,
         if found is None:
             raise HTTPException(status_code=404, detail="That draft isn't available. It may have been saved already.")
         return _form_page(request, session, draft_values(found), draft_id=found["id"], draft_rev=found["rev"],
+                          draft_voice=json.dumps(found["voice"]),
                           ai_generated=found["fields"].get("ai_generated", False),
                           ai_offline=found["fields"].get("offline", False))
     waiting = drafts.latest(conn, session.user_id, current.table_id)
@@ -638,11 +640,21 @@ def _recipe_extras(conn: sqlite3.Connection, recipe: dict) -> dict:
 
 
 @router.get("/recipes/{recipe_id}/edit")
-def edit_recipe_form(request: Request, recipe_id: int,
+def edit_recipe_form(request: Request, recipe_id: int, draft: int | None = None,
                      session: auth.Session = Depends(auth.require_session),
                      conn: sqlite3.Connection = Depends(get_db)):
+    from app import drafts
     recipe = recipe_or_404(conn, recipe_id, session, request)
-    return _form_page(request, session, meals.recipe_to_values(recipe), recipe=recipe)
+    if draft is not None:
+        found = drafts.get(conn, draft, session.user_id, recipe["table_id"])
+        if found is None or found["recipe_id"] != recipe_id:
+            raise HTTPException(status_code=404, detail="That draft isn't available. It may have been saved already.")
+        values = draft_values(found)
+        values["version"] = str(recipe["version"])   # saving still checks nobody else changed the recipe since
+        return _form_page(request, session, values, recipe=recipe, draft_id=found["id"], draft_rev=found["rev"],
+                          draft_voice=json.dumps(found["voice"]))
+    waiting = drafts.latest(conn, session.user_id, recipe["table_id"], recipe_id)
+    return _form_page(request, session, meals.recipe_to_values(recipe), recipe=recipe, recoverable=waiting)
 
 
 @router.post("/recipes/{recipe_id}/edit")

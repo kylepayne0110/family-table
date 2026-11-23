@@ -355,7 +355,7 @@ def test_broken_photo_still_imports_recipe(auth_client, settings, fake_web, imag
     assert response.status_code == 200
     assert 'value="Skillet Lasagna"' in response.text
     assert "couldn&#39;t download the recipe&#39;s photo" in response.text
-    assert 'name="imported_photo"' not in response.text
+    assert 'name="imported_photo" value=""' in response.text   # no photo waiting to be saved
     assert list(settings.import_dir.glob("*.webp")) == []
 
 

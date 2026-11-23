@@ -153,10 +153,15 @@
       this.silenceTimer = setTimeout(() => this.finishUtterance(), anyFinal ? Math.min(700, this.o.silenceMs) : this.o.silenceMs);
     }
 
+    // The phone hearing itself: while it speaks, anything mostly made of its own words. Just after it
+    // stops (recognition can lag), only longer runs of its own words; a quick short answer like "yes"
+    // or "to taste" is the cook, even if the question used those words.
     isEcho(text) {
-      if (!this.speaking && Date.now() > this.spokenUntil) return false;
+      const tail = !this.speaking && Date.now() <= this.spokenUntil;
+      if (!this.speaking && !tail) return false;
       const heard = words(text);
       if (!heard.length) return true;
+      if (tail && heard.length < 3) return false;
       const overlap = heard.filter((w) => this.spokenWords.has(w)).length / heard.length;
       return overlap >= 0.7 && !(heard.length === 1 && STOP_WORDS.has(heard[0]) && !this.spokenWords.has(heard[0]));
     }
@@ -262,7 +267,7 @@
       this.speechQueue = this.speechQueue.filter((j) => j !== job);
       if (!this.speechQueue.length) {
         this.speaking = false;
-        this.spokenUntil = Date.now() + 900;    // the room may still echo for a moment
+        this.spokenUntil = Date.now() + 1200;   // recognition can deliver the phone's last words a moment late
         setTimeout(() => { if (!this.speaking) this.spokenWords.clear(); }, 1500);
         if (!this.ended && !this.paused) {
           this.setState(this.restingState());
