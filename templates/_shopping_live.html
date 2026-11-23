@@ -5,6 +5,7 @@
 
 {% macro hidden(item, status) -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="table_id" value="{{ table_id }}">
 <input type="hidden" name="rev" value="{{ item.rev }}">
 {%- if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
 {%- endmacro %}
@@ -33,20 +34,10 @@
 </div>
 {%- endmacro %}
 
-{% if state.out_of_date %}
-<div class="shop-banner">
-    <p class="shop-banner__title">The meal plan changed since this list was made.</p>
-    <form method="post" action="/plan/{{ week_iso }}/shopping-list">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn btn-primary">{{ icon("basket", 18) }}Update Shopping List</button>
-    </form>
-</div>
-{% endif %}
-
 {% if state.total == 0 %}
 <div class="shop-empty">
     <p class="shop-empty__title">Nothing on the list yet</p>
-    <p>Plan this week's dinners, then tap <strong>Generate Shopping List</strong>. You can also add anything above.</p>
+    <p>On the Meal Planner, tap <strong>Add ingredients</strong> on a dinner to choose what to buy for it. You can also add anything above.</p>
     <a class="btn btn-outline" href="/plan?week={{ week_iso }}">{{ icon("calendar", 18) }}Open the Meal Planner</a>
 </div>
 {% else %}
@@ -146,6 +137,7 @@
         <p class="shop-section__hint">Tapped one by mistake? Tap it again to put it back.</p>
         <form method="post" action="{{ base }}/clear-purchased" data-list-form data-clears>
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             <button type="submit" class="btn btn-outline btn-sm">Clear purchased</button>
         </form>
     </div>

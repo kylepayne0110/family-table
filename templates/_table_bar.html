@@ -1,0 +1,41 @@
+{#- The active Table (and, with more than one, the switcher), plus the person's account.
+    Works without JavaScript: the switcher is a <details> menu of small forms. #}
+{% from "_macros.html" import icon %}
+{% set section = nav_active if nav_active in ("recipes", "plan", "shopping", "community") else "recipes" %}
+<div class="table-bar">
+    <div class="table-bar__inner">
+        {% if active_table and my_tables and my_tables | length > 1 %}
+        <details class="table-switch" data-table-switch>
+            <summary class="table-switch__current" aria-label="{{ active_table.name }}. Switch Table">
+                <span class="table-switch__label">Table</span>
+                <span class="table-switch__name" data-active-table-name>{{ active_table.name }}</span>{{ icon("chevron", 16) }}
+            </summary>
+            <div class="table-switch__menu" role="list">
+                {% for t in my_tables %}
+                <form method="post" action="/tables/switch" role="listitem" data-table-switch-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="switch_to" value="{{ t.id }}">
+                    <input type="hidden" name="section" value="{{ section }}">
+                    <button type="submit" class="table-switch__option{% if t.id == active_table.id %} is-current{% endif %}"
+                            {% if t.id == active_table.id %}aria-current="true"{% endif %}>
+                        <span class="table-switch__check" aria-hidden="true">{% if t.id == active_table.id %}{{ icon("check", 16) }}{% endif %}</span>
+                        <span>{{ t.name }}</span>
+                        <span class="table-switch__count">{{ t.member_count }} {{ "member" if t.member_count == 1 else "members" }}</span>
+                    </button>
+                </form>
+                {% endfor %}
+                <a class="table-switch__link" href="/table">Table settings &amp; invites</a>
+                <a class="table-switch__link" href="/welcome">Start another Table</a>
+            </div>
+        </details>
+        {% elif active_table %}
+        <a class="table-switch__current" href="/table" title="Table settings and invites">
+            <span class="table-switch__label">Table</span>
+            <span class="table-switch__name" data-active-table-name>{{ active_table.name }}</span>
+        </a>
+        {% else %}
+        <span class="table-switch__current"><span class="table-switch__name">Family Table</span></span>
+        {% endif %}
+        <a class="table-bar__account" href="/account">{{ icon("user", 18) }}<span>{{ user_name }}</span></a>
+    </div>
+</div>

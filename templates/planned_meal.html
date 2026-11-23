@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import wordmark, icon, flash %}
+
+{% block title %}{{ recipe.name }} · {{ meal.day_name }} · Family Table{% endblock %}
+
+{% block header %}
+<header class="site-header">
+    <div class="header-inner header-inner--page">
+        <a class="back-link" href="/plan?week={{ week_iso }}">{{ icon("arrow-left", 16) }}Meal Planner</a>
+        {{ wordmark() }}
+        <a class="btn btn-outline header-inner__end" href="/recipes/{{ recipe.id }}">Recipe card</a>
+    </div>
+</header>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/checklist.js') }}" defer></script>
+<script src="{{ static_url('js/meal.js') }}" defer></script>
+<script src="{{ static_url('js/voice.js') }}" defer></script>
+<script src="{{ static_url('js/cook.js') }}" defer></script>
+{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<article class="recipe planned" data-meal="{{ meal.id }}">
+    <header class="recipe__head">
+        <p class="eyebrow">
+            {% if is_tonight %}Tonight{% else %}{{ meal.day_name }}{% endif %} &middot; {{ meal.date.strftime("%b %-d") }}{% if is_past %} &middot; earlier{% endif %}
+        </p>
+        <h1 class="recipe__title">{{ recipe.name }}</h1>
+        {% if recipe.description %}<p class="recipe__lede">{{ recipe.description }}</p>{% endif %}
+    </header>
+
+    <div class="planned__actions">
+        <a class="btn btn-outline" href="/plan/meals/{{ meal.id }}/ingredients" data-checklist-open>{{ icon("basket", 18) }}Add ingredients</a>
+        <a class="btn btn-outline" href="#assistant" data-assistant-open aria-controls="assistant">{{ icon("chat", 18) }}Cooking Assistant</a>
+        <a class="btn btn-primary btn-cook" href="#cook" data-cook-start aria-controls="cook">{{ icon("mic", 18) }}Cook with me</a>
+    </div>
+
+    <p class="sync-status" data-meal-status role="status" aria-live="polite" hidden></p>
+
+    <div data-planned-recipe>
+        {% include "_planned_recipe.html" %}
+    </div>
+</article>
+
+{% include "_checklist_dialog.html" %}
+{% include "_cook_panel.html" %}
+
+{#- The assistant panel: over the recipe on phones, beside it on wide screens. Without JavaScript,
+    #assistant in the address bar shows it (CSS :target). #}
+<aside class="assistant" id="assistant" aria-labelledby="assistant-title" data-assistant>
+    <div class="assistant__bar">
+        <button type="button" class="link-button assistant__back" data-assistant-close>{{ icon("arrow-left", 16) }}Back to recipe</button>
+        <p class="assistant__title" id="assistant-title">Cooking Assistant</p>
+        <a class="icon-button assistant__close" href="#" data-assistant-close aria-label="Close the assistant">{{ icon("x", 18) }}</a>
+    </div>
+    <p class="assistant__context">{{ recipe.name }}{% if meal.servings %} &middot; <span data-assistant-servings>{{ meal.servings }}</span> servings{% endif %}</p>
+    <div class="assistant__log" data-assistant-log aria-live="polite">
+        {% include "_assistant_log.html" %}
+    </div>
+    <form class="assistant__form" method="post" action="/plan/meals/{{ meal.id }}/chat" data-assistant-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <input type="hidden" name="request_key" value="{{ request_key }}">
+        <p class="assistant__note" data-assistant-note hidden></p>
+        <div class="assistant__row">
+            <label class="visually-hidden" for="assistant-input">Ask the Cooking Assistant</label>
+            <textarea id="assistant-input" class="assistant__input" name="message" rows="1" maxlength="500" required
+                      placeholder="Ask about this recipe…" enterkeyhint="send"></textarea>
+            <button type="button" class="icon-button assistant__mic" data-assistant-mic hidden aria-label="Speak your question" aria-pressed="false">{{ icon("mic", 20) }}</button>
+            <button type="submit" class="btn btn-primary assistant__send" aria-label="Send">{{ icon("send", 18) }}</button>
+        </div>
+    </form>
+</aside>
+{% endblock %}

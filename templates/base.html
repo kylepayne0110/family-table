@@ -19,6 +19,7 @@
     <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
 
     <title>{% block title %}Family Table{% endblock %}</title>
+    {% if signed_in %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,12 +36,15 @@
 <body class="{% block body_class %}{% endblock %}">
     <a class="skip-link" href="#main">Skip to content</a>
 
+    {% if signed_in %}{% include "_table_bar.html" %}{% endif %}
+
     {% block header %}{% endblock %}
 
-    {% if signed_in %}
+    {% if signed_in and active_table %}
+    {#- Meal Plan, Recipes, and Grocery List belong to the Table named above; Community is shared by everyone. #}
     <nav class="app-nav" aria-label="Sections">
         <div class="app-nav__inner">
-            {% for key, href, label, glyph in [("recipes", "/", "Recipes", "book"), ("plan", "/plan", "Meal Planner", "calendar"), ("shopping", "/shopping", "Shopping List", "basket")] %}
+            {% for key, href, label, glyph in [("plan", "/plan", "Meal Plan", "calendar"), ("recipes", "/", "Recipes", "book"), ("shopping", "/shopping", "Grocery List", "basket"), ("community", "/community", "Community", "people")] %}
             <a class="app-nav__link{% if nav_active == key %} is-active{% endif %}" href="{{ href }}"{% if nav_active == key %} aria-current="page"{% endif %}>{{ nav_icon(glyph, 18) }}<span>{{ label }}</span></a>
             {% endfor %}
         </div>

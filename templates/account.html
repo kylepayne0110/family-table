@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import flash %}
+
+{% block title %}Account · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+<section class="pick-head">
+    <p class="eyebrow">Account</p>
+    <h1 class="display display--sm">{{ display_name }}</h1>
+    <p class="staples-intro">Signed in as <strong>{{ username }}</strong>. Your name is what your Tables see.</p>
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Your name</h2>
+    <form class="inline-form" method="post" action="/account/name">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <label class="visually-hidden" for="display-name">Your name</label>
+        <input id="display-name" class="inline-form__input" type="text" name="display_name" value="{{ display_name }}" maxlength="60" required>
+        <button type="submit" class="btn btn-outline">Save</button>
+    </form>
+    {% if errors.display_name %}<p class="field-error">{{ errors.display_name }}</p>{% endif %}
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Change password</h2>
+    {% if errors.password %}<p class="form-alert" role="alert">{{ errors.password }}</p>{% endif %}
+    <form method="post" action="/account/password">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <input type="text" name="username" value="{{ username }}" autocomplete="username" hidden>
+        <div class="field{% if errors.current_password %} has-error{% endif %}">
+            <label for="current-password">Current password</label>
+            <input id="current-password" name="current_password" type="password" autocomplete="current-password" required>
+            {% if errors.current_password %}<p class="field-error">{{ errors.current_password }}</p>{% endif %}
+        </div>
+        <div class="field{% if errors.new_password %} has-error{% endif %}">
+            <label for="new-password">New password (10+ characters)</label>
+            <input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="10" required>
+            {% if errors.new_password %}<p class="field-error">{{ errors.new_password }}</p>{% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary">Change password</button>
+        <p class="form-fineprint">Your other devices will be signed out.</p>
+    </form>
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Signed-in devices</h2>
+    <ul class="plain-list">
+        {% for s in sessions %}
+        <li class="plain-list__row">
+            <span><strong>{{ s.device or "Browser" }}</strong>{% if s.this %} (this device){% endif %}
+                <span class="muted-inline">signed in {{ s.created_at[:10] | long_date }} &middot; last seen {{ s.last_seen_at[:10] | long_date }}</span></span>
+            {% if not s.this %}
+            <form method="post" action="/account/end-session">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="table_id" value="{{ table_id }}">
+                <input type="hidden" name="session" value="{{ s.ref }}">
+                <button type="submit" class="link-button">Sign out</button>
+            </form>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% if sessions | length > 1 %}
+    <form method="post" action="/account/end-others">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <button type="submit" class="btn btn-outline btn-sm">Sign out all other devices</button>
+    </form>
+    {% endif %}
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Sign out</h2>
+    <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-outline">Sign out of this device</button>
+    </form>
+</section>
+{% endblock %}

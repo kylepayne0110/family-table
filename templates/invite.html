@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Invitation · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<section class="index-card simple-card invite-card">
+    <div class="index-card__head">
+        <h1 class="simple-card__title">{% if view.status == "ok" %}{{ view.inviter_name }} invited you to {{ view.table_name }}{% elif view.status == "member" %}You're already at {{ view.table_name }}{% else %}This invite can't be used{% endif %}</h1>
+        <span class="eyebrow">Invitation</span>
+    </div>
+    <div class="index-card__lines simple-card__body">
+        {% if view.status == "ok" %}
+        <p>A Table is where people share recipes, dinners, and groceries. Joining {{ view.table_name }} lets you see and
+           change its recipe book, meal plan, and grocery list.</p>
+        {% if signed_in %}
+        <form method="post" action="/invite/{{ token }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-primary btn-lg">Join {{ view.table_name }}</button>
+        </form>
+        <p class="form-fineprint">Signed in as {{ user_name }}. Not you? Sign out from Account first.</p>
+        {% else %}
+        <div class="invite-card__actions">
+            <a class="btn btn-primary btn-lg" href="/signup?invite={{ token | urlencode }}">Create an account and join</a>
+            <a class="btn btn-outline" href="/login?invite={{ token | urlencode }}">I already have an account</a>
+        </div>
+        {% endif %}
+        {% elif view.status == "member" %}
+        <p>{{ view.message }}</p>
+        <p><a class="btn btn-primary" href="/">Go to {{ view.table_name }}</a></p>
+        {% else %}
+        <p>{{ view.message }}</p>
+        <p><a class="btn btn-outline" href="/">Go to Family Table</a></p>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}

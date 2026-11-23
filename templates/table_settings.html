@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, flash %}
+
+{% block title %}{{ table.name }} · Table settings · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/table.js') }}" defer></script>{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<section class="pick-head">
+    <p class="eyebrow">Table settings</p>
+    <h1 class="display display--sm">{{ table.name }}</h1>
+    <p class="staples-intro">Everyone here shares this Table's recipe book, meal plan, and grocery list. Every member can
+       rename the Table, invite people, and remove members.</p>
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Name</h2>
+    <form class="inline-form" method="post" action="/table/rename">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <label class="visually-hidden" for="table-name">Table name</label>
+        <input id="table-name" class="inline-form__input" type="text" name="name" value="{{ table.name }}" maxlength="60" required>
+        <button type="submit" class="btn btn-outline">Rename</button>
+    </form>
+</section>
+
+<section class="form-card" id="invite">
+    <h2 class="form-card__title">Invite someone</h2>
+    {% if invite_link %}
+    <div class="invite-link" data-invite-link>
+        <p>Send this link to <strong>one person</strong>. It works for 7 days. They'll see
+           &ldquo;{{ user_name }} invited you to {{ table.name }}.&rdquo;</p>
+        <div class="inline-form">
+            <label class="visually-hidden" for="invite-url">Invite link</label>
+            <input id="invite-url" class="inline-form__input" type="text" value="{{ invite_link }}" readonly data-invite-url>
+            <button type="button" class="btn btn-primary" data-copy-invite hidden>Copy</button>
+            <button type="button" class="btn btn-outline" data-share-invite hidden>Share</button>
+        </div>
+        <p class="form-fineprint" data-copy-status role="status"></p>
+    </div>
+    {% else %}
+    <p class="field-hint">Each link is for one person and expires after 7 days. Invites will say
+        &ldquo;{{ user_name }} invited you to {{ table.name }}&rdquo; (<a class="text-link-inline" href="/account">change your name</a>).</p>
+    {% endif %}
+    <form method="post" action="/table/invite">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <button type="submit" class="btn {{ 'btn-outline' if invite_link else 'btn-primary' }}">{{ icon("plus", 16) }}{{ "Make another invite link" if invite_link else "Make an invite link" }}</button>
+    </form>
+    {% if invites %}
+    <h3 class="subhead">Unused invite links</h3>
+    <ul class="plain-list">
+        {% for inv in invites %}
+        <li class="plain-list__row">
+            <span>Made by {{ inv.inviter_name }} &middot; expires {{ inv.expires_at[:10] | long_date }}</span>
+            <form method="post" action="/table/revoke">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="table_id" value="{{ table_id }}">
+                <input type="hidden" name="invite_id" value="{{ inv.id }}">
+                <button type="submit" class="link-button">Cancel link</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Members</h2>
+    <ul class="plain-list">
+        {% for m in members %}
+        <li class="plain-list__row">
+            <span><strong>{{ m.display_name }}</strong>{% if m.id == me %} (you){% endif %}
+                <span class="muted-inline">joined {{ m.joined_at[:10] | long_date }}{% if m.invited_by_name %}, invited by {{ m.invited_by_name }}{% endif %}</span></span>
+            {% if m.id != me %}
+            <details class="confirm-box">
+                <summary class="link-button link-button--danger">Remove</summary>
+                <form method="post" action="/table/remove" class="confirm-box__body">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
+                    <input type="hidden" name="member_id" value="{{ m.id }}">
+                    <input type="hidden" name="confirm" value="yes">
+                    <p><strong>Remove {{ m.display_name }} from {{ table.name }}?</strong> They'll immediately lose access to
+                       this Table's recipes, photos, meal plan, grocery list, and cooking conversations, on every device.</p>
+                    <p>Their account and any other Tables they're in stay as they are. Recipes they added here stay in this
+                       Table's recipe book.</p>
+                    <button type="submit" class="btn btn-primary btn-sm">Remove {{ m.display_name }}</button>
+                </form>
+            </details>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+
+<section class="form-card">
+    <h2 class="form-card__title">Leave this Table</h2>
+    {% if members | length <= 1 %}
+    <p class="field-hint">You're the only member. To make sure this Table's recipes and plans always have someone to look
+       after them, invite someone before you leave.</p>
+    {% else %}
+    <details class="confirm-box">
+        <summary class="link-button link-button--danger">Leave {{ table.name }}</summary>
+        <form method="post" action="/table/leave" class="confirm-box__body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
+            <input type="hidden" name="confirm" value="yes">
+            <p>You'll lose access to {{ table.name }} until someone invites you again. Everything you added stays
+               with the Table for the others.</p>
+            <button type="submit" class="btn btn-primary btn-sm">Leave {{ table.name }}</button>
+        </form>
+    </details>
+    {% endif %}
+</section>
+{% endblock %}

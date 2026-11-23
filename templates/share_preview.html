@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, photo_placeholder %}
+
+{% block title %}Share {{ recipe.name }} · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/recipes/{{ recipe.id }}">{{ icon("arrow-left", 16) }}Back to the recipe</a>
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+{% if from_new %}<p class="flash" role="status">{{ icon("check", 16) }}Recipe saved to your Table. Sharing it is up to you.</p>{% endif %}
+
+{% set published = listing and listing.status == "published" %}
+<section class="pick-head">
+    <p class="eyebrow">{{ "Update the community recipe" if published else "Share with the community" }}</p>
+    <h1 class="display display--sm">{{ recipe.name }}</h1>
+    <p class="staples-intro">{% if published %}The community has version {{ listing.version }}. Your family copy stays as it is either way.
+        Updating publishes your family copy as version {{ listing.version + 1 }}; families who saved an earlier version keep theirs.
+        {% else %}Everyone using Family Table will be able to find this recipe and save a copy. You can update or withdraw it later.{% endif %}</p>
+</section>
+
+{% if not can_manage %}
+<p class="form-alert">Only members of the Table that shared this recipe can change its community page.</p>
+{% else %}
+<form method="post" action="/recipes/{{ recipe.id }}/share/{{ 'update' if published else 'publish' }}" class="share-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="recipe_version" value="{{ recipe.version }}">
+    {% if published %}<input type="hidden" name="listing_version" value="{{ listing.version }}">{% endif %}
+
+    <section class="form-card">
+        <h2 class="form-card__title">Credit</h2>
+        <div class="field">
+            <label for="share-credit">Created by</label>
+            <input id="share-credit" name="creator_credit" type="text" maxlength="80" value="{{ snapshot.creator_credit }}" placeholder="Grandma, a cookbook, or leave blank">
+            <p class="field-hint">Shown as &ldquo;Created by …&rdquo;. The page also says it was <strong>shared by {{ user_name }}</strong> (your display name only).</p>
+        </div>
+        {% if recipe.photo_filename %}
+        <label class="check-row check-row--top">
+            <input type="checkbox" name="include_photo"{% if include_photo %} checked{% endif %}>
+            <span>Include this photo (a separate copy is published; your family's photo stays private)</span>
+        </label>
+        {% endif %}
+    </section>
+
+    <section class="form-card share-preview" aria-labelledby="preview-title">
+        <h2 class="form-card__title" id="preview-title">Exactly what will be published</h2>
+        {% if recipe.photo_filename %}<img class="share-preview__photo" src="/photos/{{ recipe.photo_filename }}" alt="">{% endif %}
+        <p class="share-preview__name">{{ snapshot.name }}</p>
+        {% if snapshot.description %}<p>{{ snapshot.description }}</p>{% endif %}
+        <p class="muted-inline">{% if snapshot.servings %}Serves {{ snapshot.servings }} &middot; {% endif %}{% if snapshot.prep_minutes %}Prep {{ snapshot.prep_minutes | duration }} &middot; {% endif %}{% if snapshot.cook_minutes %}Cook {{ snapshot.cook_minutes | duration }}{% endif %}</p>
+        <h3 class="subhead">Ingredients</h3>
+        <ul class="share-preview__list">{% for amount, name in snapshot.ingredients %}<li>{{ amount }} {{ name }}</li>{% endfor %}</ul>
+        <h3 class="subhead">Steps</h3>
+        <ol class="share-preview__list">{% for title, body in snapshot.steps %}<li>{% if title %}<strong>{{ title }}.</strong> {% endif %}{{ body }}</li>{% endfor %}</ol>
+        <h3 class="subhead">Never shared</h3>
+        <p class="muted-inline">Family notes, when you last made it, its handwritten tag, your meal plans and grocery lists,
+            cooking conversations, who in your family added it, and your account details.</p>
+    </section>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ "Update community recipe" if published else "Publish to the community" }}</button>
+        <a class="btn btn-outline" href="/recipes/{{ recipe.id }}">{{ "Cancel" if published else "Not now" }}</a>
+    </div>
+</form>
+
+{% if published %}
+<details class="confirm-box share-withdraw">
+    <summary class="link-button link-button--danger">Withdraw from the community</summary>
+    <form method="post" action="/recipes/{{ recipe.id }}/share/withdraw" class="confirm-box__body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="confirm" value="yes">
+        <p>The community page and its photo will be removed. Families who already saved a copy keep their own copy.</p>
+        <button type="submit" class="btn btn-primary btn-sm">Withdraw it</button>
+    </form>
+</details>
+{% endif %}
+{% endif %}
+{% endblock %}

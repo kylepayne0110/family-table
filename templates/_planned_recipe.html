@@ -1,0 +1,86 @@
+{# The recipe at this dinner's serving count. Swapped in place when servings change. #}
+{% from "_macros.html" import icon %}
+<section class="servings" aria-labelledby="servings-title">
+    {% if recipe.servings %}
+    <form class="servings__form" method="post" action="/plan/meals/{{ meal.id }}/servings" data-servings-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        {#- First submit button: pressing Enter in the box submits the typed number, not "−". #}
+        <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">Update</button>
+        <p class="servings__label" id="servings-title">Cooking for</p>
+        <div class="stepper">
+            <button type="submit" class="stepper__btn" name="servings" value="{{ [meal.servings - 1, 1] | max }}"{% if meal.servings <= 1 %} disabled{% endif %} aria-label="One fewer serving">{{ icon("minus", 18) }}</button>
+            <label class="visually-hidden" for="servings-input">Servings</label>
+            <input id="servings-input" class="stepper__input" type="number" name="servings_typed" value="{{ meal.servings }}" min="1" max="100" inputmode="numeric" data-servings-input>
+            <button type="submit" class="stepper__btn" name="servings" value="{{ [meal.servings + 1, 100] | min }}"{% if meal.servings >= 100 %} disabled{% endif %} aria-label="One more serving">{{ icon("plus", 18) }}</button>
+        </div>
+        <p class="servings__note">
+            {%- if meal.meal_servings %}Saved recipe makes {{ recipe.servings }}.
+            <button type="submit" class="link-button link-button--accent" name="reset" value="1">Reset to {{ recipe.servings }}</button>
+            {%- else %}As the recipe is written.{% endif -%}
+        </p>
+    </form>
+    {% else %}
+    {#- Older recipes may not say how many they serve: ask once, so scaling is accurate. #}
+    <form class="servings__form servings__form--yield" method="post" action="/plan/meals/{{ meal.id }}/yield" data-servings-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
+        <p class="servings__label" id="servings-title">How many servings does this recipe make as written?</p>
+        <p class="servings__note">It doesn't say, so amounts are shown as written. Tell us once and you can scale it.</p>
+        <div class="servings__yield">
+            <label class="visually-hidden" for="yield-input">Servings the recipe makes</label>
+            <input id="yield-input" class="stepper__input" type="number" name="servings" min="1" max="100" inputmode="numeric" required>
+            <button type="submit" class="btn btn-outline btn-sm">Save</button>
+        </div>
+    </form>
+    {% endif %}
+</section>
+
+<div class="recipe__body planned__body">
+    <section class="ingredients" aria-labelledby="ingredients-title">
+        <div class="col-head">
+            <h2 id="ingredients-title">Ingredients</h2>
+            {% if scaled %}<p class="eyebrow">For {{ meal.servings }}</p>{% endif %}
+        </div>
+        {% if lines %}
+        <ul class="ingredient-list" data-ingredients="meal-{{ meal.id }}">
+            {% for line in lines %}
+            <li>
+                <label class="ingredient">
+                    <input type="checkbox" class="ingredient__input">
+                    <span class="ingredient__box" aria-hidden="true"></span>
+                    <span class="ingredient__text">
+                        {% if line.amount %}<span class="ingredient__amount">{{ line.amount }}</span>{% endif %}
+                        {{ line.name }}
+                    </span>
+                </label>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="muted-copy">No ingredients yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="method" aria-labelledby="method-title">
+        <div class="col-head">
+            <h2 id="method-title">How to make it</h2>
+        </div>
+        {% if steps %}
+        <ol class="steps">
+            {% for step in steps %}
+            <li class="step" id="step-{{ loop.index }}">
+                <span class="step__num" aria-hidden="true">{{ "%02d" | format(loop.index) }}</span>
+                <div class="step__content">
+                    {% if step.title %}<h3 class="step__title">{{ step.title }}</h3>{% endif %}
+                    <p class="step__body">{{ step.body }}</p>
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% if scaled %}<p class="planned__fineprint">Quantities in the steps follow the ingredient list where they clearly match. Oven temperatures and cooking times are as written.</p>{% endif %}
+        {% else %}
+        <p class="muted-copy">No steps written down yet.</p>
+        {% endif %}
+    </section>
+</div>

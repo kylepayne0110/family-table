@@ -210,7 +210,8 @@ def _parse_content_type(value: str | None) -> tuple[str, str | None]:
     return media.strip().lower(), charset
 
 
-def fetch(url: str, max_bytes: int, accept: str = "text/html,application/xhtml+xml") -> FetchResult:
+def fetch(url: str, max_bytes: int, accept: str = "text/html,application/xhtml+xml",
+          user_agent: str = USER_AGENT) -> FetchResult:
     """GET a URL with SSRF protection, redirect re-checks, timeouts, and size limits."""
     deadline = time.monotonic() + TOTAL_TIMEOUT
 
@@ -220,7 +221,7 @@ def fetch(url: str, max_bytes: int, accept: str = "text/html,application/xhtml+x
         try:
             try:
                 conn.request("GET", path, headers={
-                    "User-Agent": USER_AGENT,
+                    "User-Agent": user_agent,
                     "Accept": accept,
                     "Accept-Language": "en-US,en;q=0.8",
                     "Accept-Encoding": "gzip",

@@ -1,0 +1,24 @@
+{#- The recipe form's voice helper. It only fills in this form; Save is still yours to press. #}
+{% from "_macros.html" import icon %}
+<section class="cook rvoice" data-recipe-voice aria-labelledby="rvoice-title" hidden>
+    <div class="cook__bar">
+        <p class="cook__title" id="rvoice-title">Tell me the recipe</p>
+        <button type="button" class="btn btn-outline btn-sm" data-rvoice-end>{{ icon("x", 16) }}Close</button>
+    </div>
+    <button type="button" class="cook__orb" data-rvoice-orb aria-live="polite">
+        <span class="cook__orb-dot" aria-hidden="true"></span>
+        <span class="cook__state" data-rvoice-state>Starting…</span>
+    </button>
+    <p class="cook__hint" data-rvoice-hint>Take your time. I'll fill in the form while you talk and ask about anything missing when you're done.</p>
+    <p class="cook__heard" data-rvoice-heard aria-live="off"></p>
+    <p class="cook__reply" data-rvoice-reply aria-live="polite"></p>
+    <p class="rvoice__filled" data-rvoice-filled aria-live="polite"></p>
+    <div class="cook__footer">
+        <button type="button" class="btn btn-outline btn-sm" data-rvoice-undo disabled>{{ icon("undo", 16) }}Undo</button>
+        <button type="button" class="btn btn-outline btn-sm" data-rvoice-done>I'm done talking</button>
+        <button type="button" class="btn btn-outline btn-sm" data-rvoice-mute aria-pressed="false">{{ icon("mic-off", 16) }}<span>Mute</span></button>
+    </div>
+    <p class="cook__privacy">Your voice is turned into text by your phone's own speech recognition (on iPhone, Apple's
+        dictation service; in Chrome, Google's). Family Table receives only the text and never stores audio. Typing in the
+        form works at the same time. Closing this, or saying &ldquo;sounds good,&rdquo; never saves: review the recipe and press Save.</p>
+</section>

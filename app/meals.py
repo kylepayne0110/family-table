@@ -21,15 +21,15 @@ from app.images import FILENAME_PATTERN
 LIMITS = {
     "name": 120, "description": 600, "cuisine": 40, "card_tag": 30,
     "amount": 50, "ingredient": 200, "step_title": 80, "step_body": 2000,
-    "note_author": 40, "note_body": 1000, "source_url": 500,
+    "note_author": 40, "note_body": 1000, "source_url": 500, "creator_credit": 80,
 }
 MAX_INGREDIENTS = 100
 MAX_STEPS = 50
 
 # Columns shown on cards and the featured recipe.
 CARD_COLUMNS = (
-    "id, name, description, category, cuisine, prep_minutes, cook_minutes, "
-    "servings, photo_filename, card_tag, last_made, source_url"
+    "id, table_id, name, description, category, cuisine, prep_minutes, cook_minutes, "
+    "servings, photo_filename, card_tag, last_made, source_url, creator_credit"
 )
 
 
@@ -51,6 +51,7 @@ class RecipeData:
     note_author: str = ""
     note_body: str = ""
     source_url: str = ""
+    creator_credit: str = ""
 
 
 # ---- Form parsing and validation ----
@@ -103,6 +104,8 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
         "note_author": _text(form, "note_author"),
         "note_body": _text(form, "note_body"),
         "source_url": _text(form, "source_url"),
+        "creator_credit": _text(form, "creator_credit"),
+        "version": _text(form, "version") if _text(form, "version").isdigit() else "",
         # A photo found by "Import from a website", waiting to be saved.
         "imported_photo": _text(form, "imported_photo") if FILENAME_PATTERN.fullmatch(_text(form, "imported_photo")) else "",
         "ingredients": ingredients,
@@ -117,7 +120,8 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
     # Simple length checks for single-line fields.
     for key, label in [("name", "Name"), ("description", "Description"),
                        ("cuisine", "Cuisine"), ("card_tag", "Card tag"),
-                       ("note_author", "Note author"), ("note_body", "Note")]:
+                       ("note_author", "Note author"), ("note_body", "Note"),
+                       ("creator_credit", "Created by")]:
         if len(values[key]) > LIMITS[key]:
             errors[key] = f"{label} must be {LIMITS[key]} characters or fewer."
 
@@ -167,7 +171,7 @@ def parse_recipe_form(form) -> tuple[dict, RecipeData | None, dict[str, str]]:
         ingredients=[(i["amount"], i["name"]) for i in ingredients],
         steps=[(s["title"], s["body"]) for s in steps],
         note_author=values["note_author"], note_body=values["note_body"],
-        source_url=values["source_url"],
+        source_url=values["source_url"], creator_credit=values["creator_credit"],
     )
     return values, data, {}
 
@@ -184,15 +188,16 @@ def recipe_to_values(recipe: dict) -> dict:
         "card_tag": recipe["card_tag"], "last_made": recipe["last_made"] or "",
         "note_author": "", "note_body": "",
         "source_url": recipe["source_url"], "imported_photo": "",
+        "creator_credit": recipe.get("creator_credit") or "", "version": str(recipe.get("version") or ""),
         "ingredients": [{"amount": i["amount"], "name": i["name"]} for i in recipe["ingredients"]],
         "steps": [{"title": s["title"], "body": s["body"]} for s in recipe["steps"]],
     }
 
 
-# ---- Queries ----
+# ---- Queries (always within one Table) ----
 
-def count_recipes(conn: sqlite3.Connection) -> int:
-    return conn.execute("SELECT COUNT(*) FROM recipes").fetchone()[0]
+def count_recipes(conn: sqlite3.Connection, table_id: int) -> int:
+    return conn.execute("SELECT COUNT(*) FROM recipes WHERE table_id = ?", (table_id,)).fetchone()[0]
 
 
 def _like(term: str) -> str:
@@ -201,10 +206,10 @@ def _like(term: str) -> str:
     return f"%{escaped}%"
 
 
-def list_recipes(conn: sqlite3.Connection, query: str = "", category: str = "") -> list[sqlite3.Row]:
-    """Recipes in card order, filtered by category and search words."""
-    sql = f"SELECT {CARD_COLUMNS} FROM recipes WHERE 1 = 1"
-    params: list = []
+def list_recipes(conn: sqlite3.Connection, table_id: int, query: str = "", category: str = "") -> list[sqlite3.Row]:
+    """A Table's recipes in card order, filtered by category and search words."""
+    sql = f"SELECT {CARD_COLUMNS} FROM recipes WHERE table_id = ?"
+    params: list = [table_id]
 
     if category:
         sql += " AND category = ?"
@@ -214,10 +219,10 @@ def list_recipes(conn: sqlite3.Connection, query: str = "", category: str = "") 
     for term in query.split()[:8]:
         sql += """ AND (
             name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\'
-            OR cuisine LIKE ? ESCAPE '\\' OR card_tag LIKE ? ESCAPE '\\'
+            OR cuisine LIKE ? ESCAPE '\\' OR card_tag LIKE ? ESCAPE '\\' OR creator_credit LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM ingredients i
                        WHERE i.recipe_id = recipes.id AND i.name LIKE ? ESCAPE '\\'))"""
-        params.extend([_like(term)] * 5)
+        params.extend([_like(term)] * 6)
 
     sql += " ORDER BY id"
     return conn.execute(sql, params).fetchall()
@@ -230,29 +235,34 @@ def latest_note(conn: sqlite3.Connection, recipe_id: int) -> sqlite3.Row | None:
     ).fetchone()
 
 
-def featured_recipe(conn: sqlite3.Connection, today: date) -> sqlite3.Row | None:
+def featured_recipe(conn: sqlite3.Connection, table_id: int, today: date) -> sqlite3.Row | None:
     """Tonight's pick: rotates one recipe per day, preferring ones with photos."""
-    for where in ("WHERE photo_filename IS NOT NULL", ""):
-        total = conn.execute(f"SELECT COUNT(*) FROM recipes {where}").fetchone()[0]
+    for where in ("AND photo_filename IS NOT NULL", ""):
+        total = conn.execute(f"SELECT COUNT(*) FROM recipes WHERE table_id = ? {where}", (table_id,)).fetchone()[0]
         if total:
             return conn.execute(
-                f"SELECT {CARD_COLUMNS} FROM recipes {where} ORDER BY id LIMIT 1 OFFSET ?",
-                (today.toordinal() % total,),
+                f"SELECT {CARD_COLUMNS} FROM recipes WHERE table_id = ? {where} ORDER BY id LIMIT 1 OFFSET ?",
+                (table_id, today.toordinal() % total),
             ).fetchone()
     return None
 
 
+def recipe_table(conn: sqlite3.Connection, recipe_id: int) -> int | None:
+    row = conn.execute("SELECT table_id FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+    return row["table_id"] if row else None
+
+
 def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> dict | None:
-    """A full recipe with ingredients, steps, and notes."""
+    """A full recipe with ingredients, steps, and notes. Callers check the Table first."""
     row = conn.execute("SELECT * FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
     if row is None:
         return None
     recipe = dict(row)
     recipe["ingredients"] = conn.execute(
-        "SELECT amount, name FROM ingredients WHERE recipe_id = ? ORDER BY position", (recipe_id,)
+        "SELECT id, amount, name FROM ingredients WHERE recipe_id = ? ORDER BY position", (recipe_id,)
     ).fetchall()
     recipe["steps"] = conn.execute(
-        "SELECT title, body FROM steps WHERE recipe_id = ? ORDER BY position", (recipe_id,)
+        "SELECT id, title, body FROM steps WHERE recipe_id = ? ORDER BY position", (recipe_id,)
     ).fetchall()
     recipe["notes"] = conn.execute(
         "SELECT id, author, body, created_at FROM notes WHERE recipe_id = ? ORDER BY created_at DESC, id DESC",
@@ -263,33 +273,53 @@ def get_recipe(conn: sqlite3.Connection, recipe_id: int) -> dict | None:
 
 # ---- Writes ----
 
+class StaleEdit(Exception):
+    """Someone else saved this recipe after the form was opened."""
+
+
 def save_recipe(conn: sqlite3.Connection, data: RecipeData, photo_filename: str | None,
-                recipe_id: int | None = None) -> int:
-    """Insert or update a recipe and its children in one transaction."""
+                recipe_id: int | None = None, *, table_id: int | None = None, user_id: int | None = None,
+                expected_version: int | None = None, community: dict | None = None) -> int:
+    """Insert or update a recipe and its children in one transaction.
+
+    A new recipe needs its Table. An edit with `expected_version` refuses to overwrite a newer
+    save by another family member (StaleEdit), so nobody's work is silently lost.
+    """
+    from app.database import write_transaction
     fields = (data.name, data.description, data.category, data.cuisine, data.prep_minutes,
               data.cook_minutes, data.servings, photo_filename, data.card_tag, data.last_made,
-              data.source_url)
+              data.source_url, data.creator_credit)
 
-    # "with conn" commits on success and rolls back on any error.
-    with conn:
+    with write_transaction(conn):
         if recipe_id is None:
+            if table_id is None:
+                raise ValueError("A new recipe needs a Table.")
+            community = community or {}
             cur = conn.execute(
-                """INSERT INTO recipes (name, description, category, cuisine, prep_minutes,
-                       cook_minutes, servings, photo_filename, card_tag, last_made, source_url)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                fields,
+                """INSERT INTO recipes (table_id, name, description, category, cuisine, prep_minutes,
+                       cook_minutes, servings, photo_filename, card_tag, last_made, source_url, creator_credit,
+                       added_by, community_listing_id, community_version, community_credit)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (table_id, *fields, user_id, community.get("listing_id"), community.get("version"),
+                 community.get("credit", "")),
             )
             recipe_id = cur.lastrowid
             if data.note_body:
                 conn.execute(
-                    "INSERT INTO notes (recipe_id, author, body) VALUES (?, ?, ?)",
-                    (recipe_id, data.note_author, data.note_body),
+                    "INSERT INTO notes (recipe_id, author, body, added_by) VALUES (?, ?, ?, ?)",
+                    (recipe_id, data.note_author, data.note_body, user_id),
                 )
         else:
+            current = conn.execute("SELECT version FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+            if current is None:
+                raise StaleEdit("That recipe was deleted.")
+            if expected_version is not None and current["version"] != expected_version:
+                raise StaleEdit("Someone else saved changes to this recipe after you opened it.")
             conn.execute(
                 """UPDATE recipes SET name = ?, description = ?, category = ?, cuisine = ?,
                        prep_minutes = ?, cook_minutes = ?, servings = ?, photo_filename = ?,
-                       card_tag = ?, last_made = ?, source_url = ?, updated_at = datetime('now')
+                       card_tag = ?, last_made = ?, source_url = ?, creator_credit = ?,
+                       version = version + 1, updated_at = datetime('now')
                    WHERE id = ?""",
                 (*fields, recipe_id),
             )
@@ -308,6 +338,43 @@ def save_recipe(conn: sqlite3.Connection, data: RecipeData, photo_filename: str 
     return recipe_id
 
 
+class StaleChange(Exception):
+    """The recipe was edited after a change was proposed, so the proposal no longer fits."""
+
+
+_CHANGE_COLUMNS = {
+    "ingredient": ("ingredients", "name"),
+    "amount": ("ingredients", "amount"),
+    "step_title": ("steps", "title"),
+    "step_body": ("steps", "body"),
+}
+
+
+def apply_recipe_changes(conn: sqlite3.Connection, recipe_id: int, changes: list[dict]) -> None:
+    """Save confirmed changes to a recipe, all or nothing.
+
+    Each change names a row and the exact text it expects to replace; if any text differs
+    (someone edited the recipe meanwhile), nothing is saved. The serving count is never
+    touched, so the recipe keeps its original baseline.
+    """
+    from app.database import write_transaction  # local import keeps meals.py free of cycles
+    with write_transaction(conn):
+        apply_recipe_changes_in_transaction(conn, recipe_id, changes)
+
+
+def apply_recipe_changes_in_transaction(conn: sqlite3.Connection, recipe_id: int, changes: list[dict]) -> None:
+    """apply_recipe_changes for a caller that already holds the write transaction."""
+    for change in changes:
+        table, column = _CHANGE_COLUMNS[change["kind"]]
+        # Table and column names come from the fixed map above, never from the request.
+        row = conn.execute(f"SELECT {column} FROM {table} WHERE id = ? AND recipe_id = ?",
+                           (change["id"], recipe_id)).fetchone()
+        if row is None or row[0] != change["before"]:
+            raise StaleChange("The recipe changed since this was suggested.")
+        conn.execute(f"UPDATE {table} SET {column} = ? WHERE id = ?", (change["after"], change["id"]))
+    conn.execute("UPDATE recipes SET version = version + 1, updated_at = datetime('now') WHERE id = ?", (recipe_id,))
+
+
 def delete_recipe(conn: sqlite3.Connection, recipe_id: int) -> None:
     """Delete a recipe; ingredients, steps, and notes cascade."""
     with conn:
@@ -322,9 +389,10 @@ def mark_made(conn: sqlite3.Connection, recipe_id: int, made_on: date) -> None:
         )
 
 
-def add_note(conn: sqlite3.Connection, recipe_id: int, author: str, body: str) -> None:
+def add_note(conn: sqlite3.Connection, recipe_id: int, author: str, body: str, user_id: int | None = None) -> None:
     with conn:
-        conn.execute("INSERT INTO notes (recipe_id, author, body) VALUES (?, ?, ?)", (recipe_id, author, body))
+        conn.execute("INSERT INTO notes (recipe_id, author, body, added_by) VALUES (?, ?, ?, ?)",
+                     (recipe_id, author, body, user_id))
 
 
 def delete_note(conn: sqlite3.Connection, recipe_id: int, note_id: int) -> None:

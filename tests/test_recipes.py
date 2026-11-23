@@ -1,16 +1,13 @@
 # sqlite3 inspects the test database directly.
 import sqlite3
 
-# date checks the "made today" action.
-from datetime import date
-
 # TestClient lets us restart the app.
 from fastapi.testclient import TestClient
 
 # Project modules and helpers.
 from app.database import connect
 from app.main import create_app
-from tests.conftest import csrf_from, create_recipe, login, recipe_form, recipe_id_from
+from tests.conftest import TEST_NOW, csrf_from, create_recipe, login, recipe_form, recipe_id_from
 
 
 def db(settings) -> sqlite3.Connection:
@@ -137,7 +134,7 @@ def test_mark_made_today(auth_client, settings):
     token = csrf_from(auth_client.get(f"/recipes/{recipe_id}").text)
     assert auth_client.post(f"/recipes/{recipe_id}/made", data={"csrf_token": token}).status_code == 303
     stored = db(settings).execute("SELECT last_made FROM recipes WHERE id = ?", (recipe_id,)).fetchone()[0]
-    assert stored == date.today().isoformat()
+    assert stored == TEST_NOW.date().isoformat()   # the household's today
     assert "Made today" in auth_client.get("/").text
 
 

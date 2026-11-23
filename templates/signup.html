@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Create an account · Family Table{% endblock %}
+{% block body_class %}login-body{% endblock %}
+{% block main_class %}login{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<section class="login-brand" aria-label="Family Table">
+    <p class="eyebrow eyebrow--light">Recipes, dinners, and groceries</p>
+    <div class="login-brand__main">
+        <h1 class="login-title">Family <em>Table</em></h1>
+        <p class="login-tagline">What are we having? How do I make it? What do we need from the store?</p>
+    </div>
+    <p class="eyebrow eyebrow--light login-brand__est">Pull up a chair</p>
+</section>
+
+<section class="login-side">
+    <div class="login-card-wrap">
+        {% set signup = true %}
+        <form class="index-card login-card" method="post" action="/signup" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="invite" value="{{ invite or '' }}">
+            <div class="index-card__head">
+                <h2 class="login-card__title">Create an account</h2>
+                <span class="eyebrow">Card No. 002</span>
+            </div>
+            <div class="index-card__lines login-card__body">
+                {% if invite_view %}{% include "_invite_banner.html" %}{% endif %}
+                {% if errors.form %}<p class="form-alert" role="alert">{{ errors.form }}</p>{% endif %}
+
+                <div class="line-field{% if errors.display_name %} has-error{% endif %}">
+                    <label for="display_name">Your name</label>
+                    <input id="display_name" name="display_name" type="text" value="{{ values.display_name or '' }}"
+                           autocomplete="name" maxlength="60" required {% if errors.display_name %}aria-describedby="err-name"{% endif %}>
+                </div>
+                {% if errors.display_name %}<p class="field-error" id="err-name">{{ errors.display_name }}</p>{% endif %}
+
+                <div class="line-field{% if errors.username %} has-error{% endif %}">
+                    <label for="username">Username</label>
+                    <input id="username" name="username" type="text" value="{{ values.username or '' }}"
+                           autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" required
+                           {% if errors.username %}aria-describedby="err-username"{% endif %}>
+                </div>
+                {% if errors.username %}<p class="field-error" id="err-username">{{ errors.username }}</p>{% endif %}
+
+                <div class="line-field{% if errors.password %} has-error{% endif %}">
+                    <label for="password">Password <span class="label-hint">(10+ characters)</span></label>
+                    <input id="password" name="password" type="password" autocomplete="new-password" minlength="10" required
+                           {% if errors.password %}aria-describedby="err-password"{% endif %}>
+                </div>
+                {% if errors.password %}<p class="field-error" id="err-password">{{ errors.password }}</p>{% endif %}
+
+                <label class="check-row">
+                    <input type="checkbox" name="remember">
+                    <span>Keep me signed in</span>
+                </label>
+
+                <button type="submit" class="btn btn-primary btn-block">Create account <span aria-hidden="true">&rarr;</span></button>
+                <p class="form-fineprint">Your family sees your name. Your username and password stay private.</p>
+            </div>
+        </form>
+        <p class="login-alt">Already have an account? <a class="text-link-inline" href="/login{% if invite %}?invite={{ invite | urlencode }}{% endif %}">Sign in</a></p>
+    </div>
+</section>
+{% endblock %}

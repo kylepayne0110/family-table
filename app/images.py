@@ -19,6 +19,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 # Longest edge of a stored photo, in pixels.
 MAX_EDGE = 1800
+# Photos of a package's cooking panel keep more detail so the small print stays readable.
+LABEL_MAX_EDGE = 2800
 
 # Refuse absurdly large images (protects a small server's memory).
 MAX_PIXELS = 50_000_000
@@ -33,7 +35,7 @@ class ImageError(ValueError):
     """An upload that isn't a usable photo."""
 
 
-def process_photo(data: bytes, upload_dir: Path, max_bytes: int) -> str:
+def process_photo(data: bytes, upload_dir: Path, max_bytes: int, max_edge: int = MAX_EDGE, quality: int = 82) -> str:
     """Validate, orient, resize, and save a photo; return its new filename."""
     if not data:
         raise ImageError("The photo file was empty.")
@@ -55,7 +57,7 @@ def process_photo(data: bytes, upload_dir: Path, max_bytes: int) -> str:
             with Image.open(io.BytesIO(data)) as img:
                 img = ImageOps.exif_transpose(img)  # fix phone rotation
                 img = img.convert("RGB")
-                img.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
+                img.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
     except ImageError:
         raise
     except (UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning, OSError, SyntaxError) as exc:
@@ -67,7 +69,7 @@ def process_photo(data: bytes, upload_dir: Path, max_bytes: int) -> str:
     temp_path = upload_dir / f".{filename}.tmp"
 
     # Write to a temp file, then rename, so a crash never leaves half a photo.
-    img.save(temp_path, "WEBP", quality=82, method=4)
+    img.save(temp_path, "WEBP", quality=quality, method=4)
     temp_path.replace(final_path)
     return filename
 

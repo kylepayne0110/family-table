@@ -2,11 +2,23 @@
 {% from "_macros.html" import icon %}
 <p class="plan-hint">
     <span class="plan-hint__drag">Drag {{ icon("grip", 16) }} to move a dinner. Two dinners swap days.</span>
-    <span class="plan-hint__count">{{ planned_count }} of 7 dinners planned</span>
+    <span class="plan-hint__count">{% if open_days %}{{ planned_count }} of {{ open_days }} dinners planned{% else %}This week is over{% endif %}</span>
 </p>
 
-<ol class="plan-board" data-plan-board data-week="{{ week_iso }}">
+<ol class="plan-board" data-plan-board data-week="{{ week_iso }}" data-today="{{ today_iso }}">
 {% for d in days %}
+    {% if d.is_past %}
+    {#- A day that's over (household time): its slot is clear; the dinner is kept in Earlier below. #}
+    <li class="day-card is-past is-empty" id="day-{{ d.index }}" data-past>
+        <div class="day-card__head">
+            <p class="day-card__day">{{ d.name }}</p>
+            <p class="day-card__date">{{ d.date.strftime("%b %-d") }}</p>
+        </div>
+        <div class="day-card__slot">
+            <p class="day-card__blank">This day is over.</p>
+        </div>
+    </li>
+    {% else %}
     <li class="day-card{% if d.is_today %} is-today{% endif %}{% if not d.recipe %} is-empty{% endif %}" id="day-{{ d.index }}" data-day="{{ d.index }}">
         <div class="day-card__head">
             <p class="day-card__day">{{ d.name }}</p>
@@ -19,29 +31,40 @@
             {% set r = d.recipe %}
             <div class="day-card__meal">
                 <button type="button" class="drag-handle" data-drag-handle aria-label="Drag {{ r.name }} to another day" title="Drag to another day">{{ icon("grip", 20) }}</button>
-                <a class="day-card__photo" href="/recipes/{{ r.id }}" tabindex="-1" aria-hidden="true">
-                    {% if r.photo_filename %}
+                <a class="day-card__photo" href="/plan/meals/{{ r.meal_id }}" tabindex="-1" aria-hidden="true">
+                    {% if r.kind == "packaged" %}
+                        {{ icon("box", 28) }}
+                    {% elif r.photo_filename %}
                         <img src="/photos/{{ r.photo_filename }}" alt="" loading="lazy" decoding="async">
                     {% else %}
                         {{ icon("plate", 28) }}
                     {% endif %}
                 </a>
                 <div class="day-card__info">
-                    <a class="day-card__title" href="/recipes/{{ r.id }}">{{ r.name }}</a>
+                    <a class="day-card__title" href="/plan/meals/{{ r.meal_id }}">{{ r.name }}</a>
                     {% set minutes = (r.prep_minutes or 0) + (r.cook_minutes or 0) %}
-                    {% if minutes %}<p class="day-card__time">{{ icon("clock", 13) }}{{ minutes | duration }}</p>{% endif %}
+                    <p class="day-card__time">
+                        {%- if r.kind == "packaged" %}<span class="day-card__serves">Packaged</span>{% if r.brand %}<span>{{ r.brand }}</span>{% endif %}{% endif -%}
+                        {%- if minutes %}<span>{{ icon("clock", 13) }}{{ minutes | duration }}</span>{% endif -%}
+                        {%- if r.meal_servings %}<span class="day-card__serves">For {{ r.meal_servings }}</span>{% endif -%}
+                    </p>
                 </div>
             </div>
+            {% if r.kind == "recipe" %}
+            <a class="btn btn-outline btn-sm day-card__add-ingredients" href="/plan/meals/{{ r.meal_id }}/ingredients" data-checklist-open aria-label="Add ingredients for {{ r.name }} to the shopping list">{{ icon("basket", 16) }}Add ingredients</a>
+            {% endif %}
             <div class="day-card__actions">
                 <a class="mini-link" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose">Change</a>
+                <a class="mini-link" href="/plan/{{ week_iso }}/day/{{ d.index }}/packaged">Scan instead</a>
                 <details class="move-menu">
                     <summary class="mini-link">Move</summary>
                     <form class="move-menu__form" method="post" action="/plan/{{ week_iso }}/move" data-plan-form>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="table_id" value="{{ table_id }}">
                         <input type="hidden" name="from_day" value="{{ d.index }}">
                         <label class="visually-hidden" for="move-{{ d.index }}">Move {{ r.name }} to</label>
                         <select id="move-{{ d.index }}" name="to_day">
-                            {% for other in days if other.index != d.index %}
+                            {% for other in days if other.index != d.index and not other.is_past %}
                             <option value="{{ other.index }}">{{ other.name }}{% if other.recipe %} (swap){% endif %}</option>
                             {% endfor %}
                         </select>
@@ -50,6 +73,7 @@
                 </details>
                 <form method="post" action="/plan/{{ week_iso }}/day/{{ d.index }}/clear" data-plan-form>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <button type="submit" class="mini-link mini-link--muted" aria-label="Remove {{ r.name }} from {{ d.name }}">Remove</button>
                 </form>
             </div>
@@ -57,45 +81,31 @@
             <a class="day-card__add" href="/plan/{{ week_iso }}/day/{{ d.index }}/choose" aria-label="Add dinner for {{ d.name }}">
                 {{ icon("plus", 18) }}<span>Add dinner</span>
             </a>
+            <a class="day-card__scan" href="/plan/{{ week_iso }}/day/{{ d.index }}/packaged" aria-label="Scan a packaged meal for {{ d.name }}">
+                {{ icon("camera", 16) }}<span>Scan a packaged meal</span>
+            </a>
             <p class="day-card__blank">Leftovers, a night out, or nothing planned</p>
         {% endif %}
         </div>
     </li>
+    {% endif %}
 {% endfor %}
 </ol>
 
-<section class="list-panel{% if list_status == 'outdated' %} is-outdated{% endif %}" aria-label="Shopping list">
-    {% if list_status == "outdated" %}
-        <div class="list-panel__text">
-            <p class="list-panel__title">The plan changed since the shopping list was made</p>
-            <p>Updating keeps what you've already checked off and anything you added by hand.</p>
-        </div>
-        <div class="list-panel__actions">
-            <form method="post" action="/plan/{{ week_iso }}/shopping-list">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-primary btn-lg">{{ icon("basket", 18) }}Update Shopping List</button>
-            </form>
-            <a class="text-link" href="/shopping?week={{ week_iso }}">Open the current list</a>
-        </div>
-    {% elif list_status == "current" %}
-        <div class="list-panel__text">
-            <p class="list-panel__title">{{ icon("check", 16) }}Shopping list is up to date</p>
-            <p>Moving dinners between days doesn't change the groceries.</p>
-        </div>
-        <div class="list-panel__actions">
-            <a class="btn btn-primary btn-lg" href="/shopping?week={{ week_iso }}">{{ icon("basket", 18) }}Open Shopping List</a>
-        </div>
-    {% else %}
-        <div class="list-panel__text">
-            <p class="list-panel__title">Ready to shop?</p>
-            <p>Gathers every ingredient from this week's dinners, combines matches, and sets kitchen staples aside.</p>
-        </div>
-        <div class="list-panel__actions">
-            <form method="post" action="/plan/{{ week_iso }}/shopping-list">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button type="submit" class="btn btn-primary btn-lg"{% if not planned_count %} disabled{% endif %}>{{ icon("basket", 18) }}Generate Shopping List</button>
-            </form>
-            {% if not planned_count %}<p class="list-panel__hint">Plan at least one dinner first.</p>{% endif %}
-        </div>
-    {% endif %}
+{% if history %}
+<section class="plan-history" aria-labelledby="plan-history-title">
+    <h2 class="plan-history__title" id="plan-history-title">Earlier this week</h2>
+    <ul class="plan-history__list">
+        {% for d in history %}
+        <li>
+            <span class="plan-history__day">{{ d.name }}, {{ d.date.strftime("%b %-d") }}</span>
+            <a class="text-link-inline" href="/plan/meals/{{ d.recipe.meal_id }}">{{ d.recipe.name }}</a>
+        </li>
+        {% endfor %}
+    </ul>
 </section>
+{% endif %}
+
+<p class="plan-shop-link">
+    <a class="text-link" href="/shopping?week={{ week_iso }}">{{ icon("basket", 18) }}Open this week's Shopping List</a>
+</p>

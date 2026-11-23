@@ -1,0 +1,44 @@
+{#- Cook with me: a spoken, two-way conversation about this planned dinner. Its turns join this
+    dinner's assistant conversation, and its place in the recipe is saved with the dinner. #}
+{% from "_macros.html" import icon %}
+<section class="cook" id="cook" data-cook data-meal-id="{{ meal.id }}" data-greeting="{{ cook_greeting }}"
+         data-step="{{ cook_step }}" data-total="{{ cook_total }}" aria-labelledby="cook-title" hidden>
+    <div class="cook__bar">
+        <p class="cook__title" id="cook-title">Cook with me</p>
+        <button type="button" class="btn btn-outline btn-sm" data-cook-end>{{ icon("x", 16) }}End</button>
+    </div>
+
+    <button type="button" class="cook__orb" data-cook-orb aria-live="polite" aria-describedby="cook-hint">
+        <span class="cook__orb-dot" aria-hidden="true"></span>
+        <span class="cook__state" data-cook-state>Starting…</span>
+    </button>
+    <p class="cook__hint" id="cook-hint" data-cook-hint>Tap the circle to interrupt or talk.</p>
+
+    <p class="cook__heard" data-cook-heard aria-live="off"></p>
+    <p class="cook__reply" data-cook-reply aria-live="polite"></p>
+
+    <div class="cook__step" data-cook-step-card{% if not cook_step %} hidden{% endif %}>
+        <p class="cook__step-label" data-cook-step-label>{% if cook_step %}Step {{ cook_step }} of {{ cook_total }}{% endif %}</p>
+        <p class="cook__step-text" data-cook-step-text></p>
+    </div>
+
+    <div class="cook__controls" role="group" aria-label="Step controls">
+        <button type="button" class="btn btn-outline" data-cook-cue="go back">{{ icon("arrow-left", 18) }}Back</button>
+        <button type="button" class="btn btn-outline" data-cook-cue="repeat">{{ icon("undo", 18) }}Repeat</button>
+        <button type="button" class="btn btn-primary" data-cook-cue="next">Next{{ icon("arrow-right", 18) }}</button>
+    </div>
+
+    <form class="cook__type" data-cook-type>
+        <label class="visually-hidden" for="cook-text">Type to the assistant</label>
+        <input id="cook-text" type="text" maxlength="500" placeholder="Or type: how much flour?" autocomplete="off" enterkeyhint="send">
+        <button type="submit" class="btn btn-primary" aria-label="Send">{{ icon("send", 18) }}</button>
+    </form>
+
+    <div class="cook__footer">
+        <button type="button" class="btn btn-outline btn-sm" data-cook-mute aria-pressed="false">{{ icon("mic-off", 16) }}<span>Mute</span></button>
+        <button type="button" class="btn btn-outline btn-sm" data-cook-retry hidden>Try again</button>
+    </div>
+    <p class="cook__privacy">Your voice is turned into text by your phone's own speech recognition (on iPhone, Apple's
+        dictation service; in Chrome, Google's). Family Table only receives the text, answers with the cooking assistant
+        on your family's computer, and never stores audio. Spoken replies use your phone's built-in voice.</p>
+</section>

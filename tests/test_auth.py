@@ -8,7 +8,8 @@ def test_app_starts_and_login_page_loads(client):
     assert response.status_code == 200
     assert "Sign in" in response.text
     assert "Come on in" in response.text
-    assert "Forgot the password? Ask Dad." in response.text
+    assert "Forgot your password?" in response.text
+    assert "Create an account" in response.text
 
 
 def test_password_hash_is_not_plaintext():
@@ -111,7 +112,8 @@ def test_login_page_explains_missing_setup(tmp_path):
 
     unconfigured = Settings(data_dir=tmp_path / "d", username="", password_hash="")
     with TestClient(create_app(unconfigured)) as c:
-        assert "python -m app.setup_login" in c.get("/login").text
+        # Without the old shared login, people simply create their own accounts.
+        assert 'href="/signup"' in c.get("/login").text
         assert login(c, username="", password="").status_code == 401
 
 

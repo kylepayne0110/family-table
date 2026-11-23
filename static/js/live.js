@@ -4,13 +4,15 @@
 
 class LiveRegion {
   // el has data-live-url (polling endpoint) and data-version (what we're showing now).
-  constructor(el, { interval = 6000, canApply = () => true, onApply = () => {} } = {}) {
+  // `params` adds query values to each poll (the planner sends the date its board shows).
+  constructor(el, { interval = 6000, canApply = () => true, onApply = () => {}, params = () => ({}) } = {}) {
     this.el = el;
     this.url = el.dataset.liveUrl;
     this.version = Number(el.dataset.version);
     this.interval = interval;
     this.canApply = canApply;
     this.onApply = onApply;
+    this.params = params;
     this.queue = [];        // changes waiting to be saved, sent one at a time in order
     this.sending = false;
     this.latest = null;     // newest server HTML not shown yet
@@ -24,6 +26,10 @@ class LiveRegion {
     // Poll right away when the phone wakes up or the tab comes back; pause while hidden.
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) this.poll();
+    });
+    // Coming back with the Back button (or reopening the app) can show a cached copy: check it.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) this.poll();
     });
     window.addEventListener("online", () => this.flush());
     // Warn before leaving the page with changes that haven't reached the server.
@@ -42,10 +48,13 @@ class LiveRegion {
     if (this.stopped) return;
     if (!document.hidden && !this.busy) {
       try {
-        const res = await fetch(`${this.url}?since=${this.version}`, {
+        const query = new URLSearchParams({ since: String(this.version), ...this.params() });
+        const joiner = this.url.includes("?") ? "&" : "?";
+        const res = await fetch(`${this.url}${joiner}${query}`, {
           headers: { "X-Requested-With": "fetch" }, cache: "no-store",
         });
         if (res.redirected) return this.signedOut();
+        if (res.status === 404 && (await LiveRegion.lostAccess(res))) return this.noAccess();
         if (res.status === 200) this.offer(await res.json());
       } catch {
         // Offline for a moment: just try again next time.
@@ -102,6 +111,7 @@ class LiveRegion {
     }
 
     if (res.redirected) return this.signedOut();
+    if (res.status === 404 && (await LiveRegion.lostAccess(res.clone()))) return this.noAccess();
     if (res.status === 403) {
       this.sending = false;
       return this.say("This page expired.", false, { label: "Reload", href: window.location.href });
@@ -139,6 +149,20 @@ class LiveRegion {
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => this.flush(), this.retryDelay);
     this.retryDelay = Math.min(this.retryDelay * 2, 15000);
+  }
+
+  // True when the server says this page's Table is no longer available to you.
+  static async lostAccess(res) {
+    try { return (await res.json()).access === "lost"; } catch { return false; }
+  }
+
+  // Removed from this Table (or it was switched away on purpose): stop and say so plainly.
+  noAccess() {
+    this.stopped = true;
+    this.sending = false;
+    this.queue = [];
+    this.el.innerHTML = "";
+    this.say("You no longer have access to this Table.", false, { label: "Go to your Tables", href: "/" });
   }
 
   signedOut() {

@@ -1,6 +1,11 @@
 # asynccontextmanager defines startup/shutdown work for the app.
 from contextlib import asynccontextmanager
 
+# logging reports startup problems and upgrades; os and re configure it.
+import logging
+import os
+import re
+
 # FastAPI creates our web application and handles HTTP requests.
 # Request represents an incoming request from the browser.
 from fastapi import FastAPI, Request
@@ -9,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 
 # RedirectResponse sends signed-out visitors to the login page; PlainTextResponse refuses huge uploads.
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 
 # StaticFiles allows FastAPI to serve CSS and JavaScript.
 from fastapi.staticfiles import StaticFiles
@@ -18,10 +23,18 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Project modules.
-from app.auth import LoginLimiter, LoginRequired
+from app import ollama, tables
+from app.account_routes import router as account_router
+from app.community_routes import router as community_router
+from app.draft_routes import router as draft_router
+from app.model_gate import ModelGate
+from app.auth import LoginRequired, default_limiters
+from app.clock import HouseholdClock
 from app.config import BASE_DIR, Settings, load_settings
 from app.database import data_folder_lock, init_db
 from app.recipe_import import cleanup_temp_photos
+from app.meal_routes import router as meal_router
+from app.packaged_routes import router as packaged_router
 from app.plan_routes import router as plan_router
 from app.pwa import router as pwa_router
 from app.routes import render, router
@@ -69,9 +82,39 @@ class BodySizeLimit:
         return await self.app(scope, limited_receive, send)
 
 
+class RedactSecrets(logging.Filter):
+    """Keep one-time links out of the access log: /invite/<token>, /reset/<token>, ?invite=<token>."""
+
+    PATTERN = re.compile(r"(/(?:invite|reset)/)[^\s/?\"]+|((?:\?|&)invite=)[^\s&\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(self.PATTERN.sub(lambda m: (m.group(1) or m.group(2)) + "[redacted]", a)
+                                if isinstance(a, str) else a for a in record.args)
+        return True
+
+
+def setup_logging() -> None:
+    """Family Table's own diagnostics (access denied, Ollama unreachable, voice problems) on stderr.
+
+    Logged: ids, fixed codes, and settings. Never passwords, tokens, raw audio, or what families say.
+    """
+    app_log = logging.getLogger("family_table")
+    if not app_log.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+        app_log.addHandler(handler)
+        app_log.setLevel(os.getenv("FAMILY_TABLE_LOG_LEVEL", "INFO").upper())
+        app_log.propagate = False
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactSecrets) for f in access.filters):
+        access.addFilter(RedactSecrets())
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the app (tests pass their own settings and data folder)."""
     settings = settings or load_settings()
+    setup_logging()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -80,19 +123,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Create the data folders and database tables on startup.
             settings.upload_dir.mkdir(parents=True, exist_ok=True)
             settings.import_dir.mkdir(parents=True, exist_ok=True)
-            init_db(settings.database_path)
+            legacy = (settings.username, settings.password_hash) if settings.login_configured else None
+            report = init_db(settings.database_path, legacy, settings.display_name, settings.table_name)
+            if report:
+                logging.getLogger("family_table").warning(
+                    "Upgraded the database to accounts and Tables. Backup of the original: %s", report["backup"])
             cleanup_temp_photos(settings.import_dir)  # leftovers from abandoned imports
             yield
 
     app = FastAPI(title="Family Table", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
-    app.state.login_limiter = LoginLimiter()
+    app.state.limiters = default_limiters()
+    app.state.login_limiter = app.state.limiters["login"]
+    # "Today" for the planner, in the household's time zone (tests freeze it).
+    app.state.clock = HouseholdClock(settings.zone)
+    # The Cooking Assistant's model: the local Ollama server (tests swap in a stand-in).
+    app.state.ask_model = lambda messages, response_format=None: ollama.chat(settings, messages, response_format)
+    # Model calls run on their own small pool, one per person, so they never hold up pages.
+    app.state.model_gate = ModelGate(settings.model_concurrency)
 
     # Make our static files accessible to the browser.
     # For example, /static/css/styles.css loads our stylesheet.
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     app.include_router(router)
+    app.include_router(account_router)  # Welcome, Tables, invites, Account
+    app.include_router(community_router)  # Community, sharing a recipe, ideas from what's on hand
+    app.include_router(draft_router)      # recipe drafts and the recipe form's voice helper
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
+    app.include_router(meal_router)  # one planned dinner: servings, Add ingredients, Cooking Assistant
+    app.include_router(packaged_router)  # scan a packaged meal for one dinner
     app.include_router(pwa_router)   # web app manifest and service worker (home-screen install)
     # Largest photo plus 4 MB of room for the rest of the recipe form.
     app.add_middleware(BodySizeLimit, max_bytes=(settings.max_upload_mb + 4) * 1024 * 1024)
@@ -117,11 +176,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def login_required(request: Request, exc: LoginRequired):
         return RedirectResponse("/login", status_code=303)
 
+    @app.exception_handler(tables.NoTable)
+    async def no_table(request: Request, exc: tables.NoTable):
+        # Signed in but not in any Table (new, or removed from the last one): start one or join one.
+        if request.headers.get("x-requested-with") == "fetch":
+            return JSONResponse({"error": "You're not a member of any Table now.", "access": "lost"}, status_code=404)
+        return RedirectResponse("/welcome", status_code=303)
+
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: StarletteHTTPException):
-        message = exc.detail if exc.status_code in (403, 404, 413) else "Something went wrong."
+        message = exc.detail if exc.status_code in (403, 404, 409, 410, 413, 422, 429) else "Something went wrong."
+        if request.headers.get("x-requested-with") == "fetch":
+            # Background requests from an open page get JSON, so the page can say what happened
+            # (for example "you no longer have access to this Table") instead of failing quietly.
+            lost = isinstance(exc, tables.NotMember)
+            return JSONResponse({"error": message, "access": "lost" if lost else ""}, status_code=exc.status_code)
+        session = getattr(request.state, "session", None)
         return render(request, "error.html", {"status": exc.status_code, "message": message},
-                      status_code=exc.status_code)
+                      session, status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def bad_url(request: Request, exc: RequestValidationError):

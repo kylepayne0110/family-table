@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}Scan a packaged meal · {{ day_name }} · Family Table{% endblock %}
+
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('vendor/zxing-0.21.3.min.js') }}" defer></script>
+<script src="{{ static_url('js/scan.js') }}" defer></script>
+{% endblock %}
+
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+{% set lk = lookup or {} %}
+<a class="back-link" href="/plan?week={{ week_iso }}#day-{{ day }}">{{ icon("arrow-left", 16) }}Meal Planner</a>
+
+<section class="scan-head">
+    <p class="eyebrow">{{ day_name }} &middot; {{ day_date.strftime("%b %-d") }}</p>
+    <h1 class="display display--sm">Scan a packaged <em>meal</em></h1>
+    <p class="scan-head__note">For a store-bought dinner. It's planned for this day only: it won't be added to the recipe box or the shopping list.</p>
+</section>
+
+{% if error %}<p class="form-alert page-alert" role="alert" data-scan-error>{{ error }}</p>{% endif %}
+
+{% if current %}
+<p class="scan-warning" role="note">{{ icon("calendar", 16) }}{{ day_name }} already has <strong>{{ current.name }}</strong>. Adding this meal replaces it only if you tick the box at the bottom.</p>
+{% endif %}
+
+<section class="scan-step" aria-labelledby="find-title" data-scanner>
+    <h2 class="scan-step__title" id="find-title"><span>1</span>Find the product</h2>
+
+    {#- Camera scanning needs JavaScript and camera access (HTTPS); scan.js reveals these. #}
+    <div class="scan-camera" data-scan-camera-box hidden>
+        <button type="button" class="btn btn-primary btn-lg btn-block" data-scan-camera>{{ icon("camera", 18) }}Scan the barcode</button>
+        <div class="scan-video" data-scan-video-box hidden>
+            <video data-scan-video playsinline muted aria-label="Camera view: point it at the barcode"></video>
+            <span class="scan-video__guide" aria-hidden="true"></span>
+            <button type="button" class="btn btn-outline btn-sm scan-video__stop" data-scan-stop>Stop camera</button>
+        </div>
+    </div>
+    <label class="btn btn-outline btn-block scan-photo-button" data-scan-photo-box hidden>
+        {{ icon("camera", 18) }}<span>Take a photo of the barcode</span>
+        <input type="file" accept="image/*" capture="environment" class="visually-hidden" data-scan-photo>
+    </label>
+
+    <form class="scan-digits" method="get" action="/plan/{{ week_iso }}/day/{{ day }}/packaged" data-lookup-form>
+        <label for="scan-barcode">Or type the digits under the barcode</label>
+        <div class="scan-digits__row">
+            <input id="scan-barcode" name="barcode" type="text" inputmode="numeric" autocomplete="off" maxlength="20"
+                   placeholder="e.g. 013800619761" value="{{ values.barcode or '' }}" data-scan-digits>
+            <button type="submit" class="btn btn-outline">Look up</button>
+        </div>
+    </form>
+
+    <p class="scan-status" data-scan-status role="status" aria-live="polite" hidden></p>
+
+    <div class="scan-result" data-lookup-result {% if not lookup %}hidden{% endif %}>
+        {% if lookup %}
+            {% if lk.found %}
+            <p class="scan-result__title">{{ icon("check", 16) }}Found on Open Food Facts</p>
+            <p class="scan-result__product"><strong>{{ lk.name or "(no name listed)" }}</strong>{% if lk.brand %} &middot; {{ lk.brand }}{% endif %}{% if lk.package_size %} &middot; {{ lk.package_size }}{% else %} &middot; package size not listed{% endif %}</p>
+            <p class="scan-result__note">Check it matches the box in your hand. You can fix anything below.
+                {% if lk.has_directions %}Cooking directions were found and copied word for word: check them against the package.
+                {% else %}Open Food Facts has no cooking directions for this product: photograph the cooking panel or type them below (or add them later).{% endif %}</p>
+            {% elif lk.error %}
+            <p class="scan-result__title">{{ lk.error }}</p>
+            {% else %}
+            <p class="scan-result__title">No product found for {{ lk.barcode }}.</p>
+            <p class="scan-result__note">Type the meal's name below; you can still add it to {{ day_name }}.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+    <p class="scan-manual"><a class="text-link-inline" href="#review" data-scan-manual>No barcode? Enter the meal's name instead</a></p>
+</section>
+
+<form id="review" class="scan-step scan-review" method="post" action="/plan/{{ week_iso }}/day/{{ day }}/packaged"
+      enctype="multipart/form-data" data-review-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
+    <h2 class="scan-step__title"><span>2</span>Check the details</h2>
+
+    <div class="field">
+        <label for="pk-name">Meal name</label>
+        <input id="pk-name" name="name" type="text" maxlength="120" required value="{{ values.name or '' }}" data-field="name">
+    </div>
+    <div class="scan-review__row">
+        <div class="field">
+            <label for="pk-brand">Brand</label>
+            <input id="pk-brand" name="brand" type="text" maxlength="80" value="{{ values.brand or '' }}" data-field="brand">
+        </div>
+        <div class="field">
+            <label for="pk-size">Package size</label>
+            <input id="pk-size" name="package_size" type="text" maxlength="40" placeholder="e.g. 10 oz" value="{{ values.package_size or '' }}" data-field="package_size">
+        </div>
+    </div>
+    <div class="field">
+        <label for="pk-barcode">Barcode (UPC)</label>
+        <input id="pk-barcode" name="barcode" type="text" inputmode="numeric" maxlength="20" value="{{ values.barcode or '' }}" data-field="barcode">
+    </div>
+
+    <h3 class="scan-review__sub">Cooking directions</h3>
+    <p class="scan-review__hint">Only what's printed on the box. Leave a section empty if the package doesn't have it; you can add directions later.</p>
+    {% for key, label in [("oven", "Oven"), ("microwave", "Microwave"), ("other", "Other directions")] %}
+    <div class="field">
+        <label for="pk-{{ key }}">{{ label }}</label>
+        <textarea id="pk-{{ key }}" name="{{ key }}" rows="3" maxlength="4000" data-field="{{ key }}">{{ values[key] or '' }}</textarea>
+        <p class="scan-review__source" data-source-note="{{ key }}"{% if not (lookup and lk[key]) %} hidden{% endif %}>Copied from Open Food Facts. Check it against the box.</p>
+    </div>
+    {% endfor %}
+
+    <h3 class="scan-review__sub">Photo of the cooking panel</h3>
+    <p class="scan-review__hint">If the directions are missing or look wrong, a clear photo of the box's cooking instructions works too (up to {{ max_upload_mb }} MB).</p>
+    <div class="scan-review__photos">
+        <label class="btn btn-outline">{{ icon("camera", 18) }}Take a photo
+            <input type="file" name="label_photo_camera" accept="image/*" capture="environment" class="visually-hidden" data-photo-input>
+        </label>
+        <label class="btn btn-outline">Choose a photo
+            <input type="file" name="label_photo_file" accept="image/*" class="visually-hidden" data-photo-input>
+        </label>
+    </div>
+    <p class="scan-review__chosen" data-photo-chosen hidden></p>
+
+    {% if current %}
+    <label class="scan-replace">
+        <input type="checkbox" name="confirm_replace"{% if values.confirm_replace %} checked{% endif %}>
+        <input type="hidden" name="replace_meal_id" value="{{ current.id }}">
+        <span>Replace <strong>{{ current.name }}</strong> on {{ day_name }} with this meal</span>
+    </label>
+    {% endif %}
+
+    <button type="submit" class="btn btn-primary btn-lg btn-block">{{ icon("plus", 18) }}Add to {{ day_name }}</button>
+    <p class="scan-review__hint scan-review__final">Your shopping list won't change.</p>
+</form>
+{% endblock %}

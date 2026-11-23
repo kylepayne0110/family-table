@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, photo_placeholder, flash %}
+{% set snap = listing.snapshot %}
+
+{% block title %}{{ snap.name }} · Community · Family Table{% endblock %}
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/community.js') }}" defer></script>{% endblock %}
+
+{% block content %}
+<a class="back-link" href="/community">{{ icon("arrow-left", 16) }}Community recipes</a>
+{{ flash(message) }}
+
+<article class="recipe">
+    <header class="recipe__head">
+        <p class="eyebrow">Community recipe{% if listing.shown_version != listing.version %} &middot; earlier version {{ listing.shown_version }}{% endif %}</p>
+        <h1 class="recipe__title">{{ snap.name }}</h1>
+        {% if snap.description %}<p class="recipe__lede">{{ snap.description }}</p>{% endif %}
+        <p class="recipe__credit">{% if snap.creator_credit %}Created by <strong>{{ snap.creator_credit }}</strong> &middot; {% endif %}Shared by {{ listing.publisher_name }}</p>
+        {% if snap.source_url %}<a class="text-link source-link" href="{{ snap.source_url }}" target="_blank" rel="noopener noreferrer nofollow">Original recipe {{ icon("arrow-right", 16) }}<span class="source-link__host">{{ snap.source_url | hostname }}</span></a>{% endif %}
+    </header>
+
+    <div class="community-save">
+        {% if saved_recipe %}
+            <p>{{ icon("check", 16) }} This version is in {{ active_table.name }}'s recipes.</p>
+            <a class="btn btn-outline" href="/recipes/{{ saved_recipe }}">Open your copy</a>
+        {% elif not active_table %}
+            <a class="btn btn-primary" href="/welcome">Start a Table to save this recipe</a>
+        {% else %}
+        <form method="post" action="/community/{{ listing.id }}/save" data-save-form>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="version" value="{{ listing.shown_version }}">
+            {% if tables_list | length > 1 %}
+            <label class="visually-hidden" for="save-table">Save to which Table</label>
+            <select id="save-table" name="table_id" class="inline-form__input inline-form__input--select">
+                {% for t in tables_list %}<option value="{{ t.id }}"{% if t.id == active_table.id %} selected{% endif %}>Save to {{ t.name }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-lg">Save</button>
+            {% else %}
+            <input type="hidden" name="table_id" value="{{ table_id }}">
+            <button type="submit" class="btn btn-primary btn-lg">Save to {{ active_table.name }}</button>
+            {% endif %}
+        </form>
+        <p class="form-fineprint">You'll get your own copy of this version to edit. Changes you make stay in your Table.</p>
+        {% endif %}
+    </div>
+
+    <dl class="info-strip">
+        <div class="info-strip__item"><dt>Prep time</dt><dd>{{ (snap.prep_minutes | duration) or "—" }}</dd></div>
+        <div class="info-strip__item"><dt>Cook time</dt><dd>{{ (snap.cook_minutes | duration) or "—" }}</dd></div>
+        <div class="info-strip__item"><dt>Servings</dt><dd>{{ snap.servings or "—" }}</dd></div>
+    </dl>
+
+    <figure class="recipe__photo">
+        {% if listing.shown_photo %}<img src="/photos/{{ listing.shown_photo }}" alt="{{ snap.name }}">{% else %}{{ photo_placeholder("No photo shared") }}{% endif %}
+    </figure>
+
+    <div class="recipe__body">
+        <section class="ingredients" aria-labelledby="ingredients-title">
+            <div class="col-head"><h2 id="ingredients-title">Ingredients</h2></div>
+            <ul class="ingredient-list ingredient-list--plain">
+                {% for amount, name in snap.ingredients %}
+                <li><span class="ingredient__text">{% if amount %}<span class="ingredient__amount">{{ amount }}</span>{% endif %} {{ name }}</span></li>
+                {% endfor %}
+            </ul>
+        </section>
+        <section class="method" aria-labelledby="method-title">
+            <div class="col-head"><h2 id="method-title">How to make it</h2></div>
+            <ol class="steps">
+                {% for title, body in snap.steps %}
+                <li class="step"><span class="step__num" aria-hidden="true">{{ "%02d" | format(loop.index) }}</span>
+                    <div class="step__content">{% if title %}<h3 class="step__title">{{ title }}</h3>{% endif %}<p class="step__body">{{ body }}</p></div></li>
+                {% endfor %}
+            </ol>
+        </section>
+    </div>
+
+    <details class="confirm-box report-box">
+        <summary class="link-button">Report this recipe</summary>
+        <form method="post" action="/community/{{ listing.id }}/report" class="confirm-box__body">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <fieldset class="plain-fieldset">
+                <legend>What's wrong with it?</legend>
+                {% for key, label in reasons.items() %}
+                <label class="check-row check-row--small"><input type="radio" name="reason" value="{{ key }}" required> {{ label }}</label>
+                {% endfor %}
+            </fieldset>
+            <label for="report-details">Anything else? (optional)</label>
+            <textarea id="report-details" name="details" rows="2" maxlength="500" class="inline-form__input"></textarea>
+            <button type="submit" class="btn btn-primary btn-sm">Send report</button>
+        </form>
+    </details>
+    {% if can_manage %}<p class="form-fineprint">This recipe was shared from your Table. Manage it from your family copy.</p>{% endif %}
+</article>
+{% endblock %}

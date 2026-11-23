@@ -1,0 +1,7 @@
+{#- "Kyle invited you to Payne's Table." on the sign-in and sign-up pages. #}
+{% if invite_view.status == "ok" %}
+<p class="invite-banner" role="status"><strong>{{ invite_view.inviter_name }} invited you to {{ invite_view.table_name }}.</strong>
+    You'll join it as soon as you {{ "create your account" if signup else "sign in" }}.</p>
+{% else %}
+<p class="form-alert" role="alert">{{ invite_view.message }}</p>
+{% endif %}

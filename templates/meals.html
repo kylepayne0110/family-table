@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "_macros.html" import wordmark, icon, recipe_card, photo_placeholder, flash %}
+{#- "with context" lets recipe cards read the household's today for "Made yesterday" labels. #}
+{% from "_macros.html" import wordmark, icon, recipe_card, photo_placeholder, flash with context %}
 
 {% block header %}
 <header class="site-header">
@@ -17,6 +18,7 @@
             <a class="btn btn-primary" href="/recipes/new"><span>+ Add<span class="hide-xs"> recipe</span></span></a>
             <form method="post" action="/logout">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="table_id" value="{{ table_id }}">
                 <button type="submit" class="link-button">Sign out</button>
             </form>
         </div>

@@ -1,0 +1,56 @@
+{# One dinner's "Add ingredients" checklist. Amounts are for the dinner's current serving count. #}
+{% from "_macros.html" import icon %}
+{% set count = checklist.selected %}
+<form class="checklist" method="post" action="/plan/meals/{{ meal.id }}/ingredients" data-checklist-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
+    {#- A new key per form: sending the same form twice (double tap, retry) adds nothing the second time. #}
+    <input type="hidden" name="request_key" value="{{ request_key }}">
+    <input type="hidden" name="servings_seen" value="{{ meal.servings or '' }}">
+
+    <div class="checklist__head">
+        <p class="eyebrow">{{ meal.day_name }} &middot; {{ meal.date.strftime("%b %-d") }}{% if meal.servings %} &middot; for {{ meal.servings }}{% endif %}</p>
+        <h2 class="checklist__title">{{ meal.recipe_name }}</h2>
+        <p class="checklist__hint">Only what's checked goes on this week's shared list. Kitchen staples start unchecked.</p>
+    </div>
+
+    <p class="checklist__status" data-checklist-status role="status" aria-live="polite"{% if not message and not error %} hidden{% endif %}>
+        {%- if error %}<span class="checklist__error">{{ error }}</span>{% elif message %}{{ icon("check", 16) }}{{ message }}{% endif -%}
+    </p>
+
+    {% if checklist.outdated %}
+    <div class="checklist__notice">
+        <p>You changed servings after adding groceries. The list still has amounts for {{ checklist.added_servings or "the earlier count" }}.</p>
+        <button type="submit" class="btn btn-outline btn-sm" formaction="/plan/meals/{{ meal.id }}/ingredients/update" formnovalidate data-checklist-update>
+            Update list to {{ meal.servings }} servings
+        </button>
+    </div>
+    {% endif %}
+
+    {% if checklist.lines %}
+    <ul class="checklist__list">
+        {% for line in checklist.lines %}
+        <li>
+            <label class="check-row">
+                <input type="checkbox" class="check-row__input" name="ingredient" value="{{ line.index }}"{% if line.checked %} checked{% endif %}>
+                <span class="check-row__box" aria-hidden="true"></span>
+                <span class="check-row__text">
+                    {% if line.amount %}<span class="check-row__amount">{{ line.amount }}</span>{% endif %}
+                    <span class="check-row__name">{{ line.name }}</span>
+                    {% if line.staple %}<span class="tag">Staple</span>{% endif %}
+                    {% if line.added %}<span class="tag tag--done">On the list{% if line.outdated %} &middot; {{ line.added_amount }}{% endif %}</span>{% endif %}
+                </span>
+            </label>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted-copy">This recipe has no ingredients yet.</p>
+    {% endif %}
+
+    <div class="checklist__foot">
+        <button type="submit" class="btn btn-primary btn-lg btn-block" data-checklist-submit>
+            {{ icon("basket", 18) }}<span data-checklist-label>Add {{ count }} item{{ "" if count == 1 else "s" }}</span>
+        </button>
+    </div>
+</form>

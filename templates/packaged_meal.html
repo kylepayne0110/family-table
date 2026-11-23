@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "_macros.html" import wordmark, icon, flash %}
+
+{% block title %}{{ item.name }} · {{ meal.day_name }} · Family Table{% endblock %}
+
+{% block header %}
+<header class="site-header">
+    <div class="header-inner header-inner--page">
+        <a class="back-link" href="/plan?week={{ week_iso }}">{{ icon("arrow-left", 16) }}Meal Planner</a>
+        {{ wordmark() }}
+        <span class="header-inner__end"></span>
+    </div>
+</header>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/scan.js') }}" defer></script>
+<script src="{{ static_url('js/voice.js') }}" defer></script>
+<script src="{{ static_url('js/cook.js') }}" defer></script>
+{% endblock %}
+
+{% macro source_note(source) -%}
+{% if source == "openfoodfacts" %}<p class="pk-source">From Open Food Facts (copied word for word). Check it against the box.</p>
+{% elif source == "typed" %}<p class="pk-source">Typed in by your family.</p>{% endif %}
+{%- endmacro %}
+
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+{{ flash(message) }}
+{% include "_cook_panel.html" %}
+{% if error %}<p class="form-alert page-alert" role="alert">{{ error }}</p>{% endif %}
+
+<article class="pk">
+    <header class="pk__head">
+        <p class="eyebrow">{% if is_tonight %}Tonight{% else %}{{ meal.day_name }}{% endif %} &middot; {{ meal.date.strftime("%b %-d") }}{% if is_past %} &middot; earlier{% endif %} &middot; Packaged meal</p>
+        <h1 class="recipe__title">{{ item.name }}</h1>
+        <p class="pk__product">
+            {%- set bits = [item.brand, item.package_size] | select | list -%}
+            {{ bits | join(" · ") }}{% if item.barcode %}{% if bits %} · {% endif %}UPC {{ item.barcode }}{% endif %}
+        </p>
+        <p class="pk-source">
+            {% if item.product_source == "openfoodfacts" %}Product details from <a class="text-link-inline" href="{{ source_url.format(code=item.barcode) }}" target="_blank" rel="noopener noreferrer nofollow">Open Food Facts</a>.
+            {% else %}Product details entered by your family.{% endif %}
+            Not in the recipe box; the shopping list wasn't changed.
+        </p>
+        <p class="planned__actions"><a class="btn btn-primary btn-cook" href="#cook" data-cook-start aria-controls="cook">{{ icon("mic", 18) }}Cook with me</a></p>
+    </header>
+
+    <section class="pk-directions" aria-labelledby="directions-title">
+        <h2 class="section-title" id="directions-title">Cooking <em>directions</em></h2>
+        {% set any_text = item.oven_directions or item.microwave_directions or item.other_directions %}
+        {% for key, label in [("oven", "Oven"), ("microwave", "Microwave"), ("other", "Directions")] %}
+            {% if item[key ~ "_directions"] %}
+            <div class="pk-method">
+                <h3 class="pk-method__title">{{ label }}</h3>
+                <p class="pk-method__text">{{ item[key ~ "_directions"] }}</p>
+                {{ source_note(item[key ~ "_source"]) }}
+            </div>
+            {% endif %}
+        {% endfor %}
+
+        {% if item.label_photo %}
+        <figure class="pk-label">
+            <a href="/photos/{{ item.label_photo }}" data-enlarge aria-label="Enlarge the photo of the cooking directions">
+                <img src="/photos/{{ item.label_photo }}" alt="Photo of the package's cooking directions">
+            </a>
+            <figcaption>Photo of the box. Tap to enlarge.</figcaption>
+        </figure>
+        {% endif %}
+
+        {% if not any_text and not item.label_photo %}
+        <p class="pk-empty">No cooking directions yet. Add a photo of the box's cooking panel or type them below.</p>
+        {% endif %}
+    </section>
+
+    <details class="pk-edit"{% if not any_text and not item.label_photo %} open{% endif %}>
+        <summary class="text-link">{{ icon("pencil", 16) }}{{ "Fix directions or photo" if (any_text or item.label_photo) else "Add directions or a photo" }}</summary>
+        <form class="pk-edit__form" method="post" action="/plan/meals/{{ meal.id }}/packaged" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
+            {% for key, label in [("oven", "Oven"), ("microwave", "Microwave"), ("other", "Other directions")] %}
+            <div class="field">
+                <label for="ed-{{ key }}">{{ label }}</label>
+                <textarea id="ed-{{ key }}" name="{{ key }}" rows="3" maxlength="4000">{{ item[key ~ "_directions"] }}</textarea>
+            </div>
+            {% endfor %}
+            <div class="scan-review__photos">
+                <label class="btn btn-outline">{{ icon("camera", 18) }}{{ "Retake photo" if item.label_photo else "Take a photo" }}
+                    <input type="file" name="label_photo_camera" accept="image/*" capture="environment" class="visually-hidden" data-photo-input>
+                </label>
+                <label class="btn btn-outline">Choose a photo
+                    <input type="file" name="label_photo_file" accept="image/*" class="visually-hidden" data-photo-input>
+                </label>
+            </div>
+            <p class="scan-review__chosen" data-photo-chosen hidden></p>
+            {% if item.label_photo %}
+            <label class="checkbox"><input type="checkbox" name="remove_photo"> Remove the current photo</label>
+            {% endif %}
+            <button type="submit" class="btn btn-primary">Save directions</button>
+        </form>
+    </details>
+</article>
+
+<dialog class="photo-viewer" data-photo-viewer aria-label="Cooking directions photo">
+    <button type="button" class="icon-button photo-viewer__close" data-viewer-close aria-label="Close">{{ icon("x", 20) }}</button>
+    <img alt="Photo of the package's cooking directions" data-viewer-img>
+</dialog>
+{% endblock %}
