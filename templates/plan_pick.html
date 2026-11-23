@@ -25,6 +25,7 @@
     <li data-filter-text="{{ r.name | lower }}">
         <form method="post" action="/plan/{{ week_iso }}/day/{{ day }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             <input type="hidden" name="recipe_id" value="{{ r.id }}">
             <button type="submit" class="pick-tile{% if r.id == current_id %} is-current{% endif %}">
                 <span class="pick-tile__photo">

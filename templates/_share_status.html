@@ -1,0 +1,18 @@
+{#- Community sharing for a family recipe: private by default; publishing and updating are separate, explicit steps. #}
+{% from "_macros.html" import icon %}
+<section class="share-status" aria-labelledby="share-title">
+    <h2 class="share-status__title" id="share-title">{{ icon("people", 18) }}Community</h2>
+    {% if listing and listing.status == "published" %}
+        <p>Shared with the community as version {{ listing.version }}{% if listing.publisher_name %}, shared by {{ listing.publisher_name }}{% endif %}.
+           <a class="text-link-inline" href="/community/{{ listing.id }}">See the community page</a>.</p>
+        {% if listing.source_recipe_version != recipe.version %}
+        <p class="share-status__note">Your family copy has changes that aren't in the community version. Edits here stay private until you choose to update it.</p>
+        {% endif %}
+        <p class="share-status__actions"><a class="btn btn-outline btn-sm" href="/recipes/{{ recipe.id }}/share">{{ "Update community recipe" if listing.source_recipe_version != recipe.version else "Manage community recipe" }}</a></p>
+    {% elif listing and listing.status == "hidden" %}
+        <p>The community version is hidden while reports are reviewed. Your family copy isn't affected.</p>
+    {% else %}
+        <p>This recipe is private to your Table.{% if listing and listing.status == "withdrawn" %} It was shared before and then withdrawn.{% endif %}</p>
+        <p class="share-status__actions"><a class="btn btn-outline btn-sm" href="/recipes/{{ recipe.id }}/share">{{ icon("share", 16) }}Share with the community</a></p>
+    {% endif %}
+</section>

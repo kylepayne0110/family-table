@@ -21,7 +21,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 # Project modules.
-from app import assistant, auth, meal_chat, meals, planner, shopping
+from app import assistant, auth, meal_chat, meals, planner, shopping, tables
 from app.database import get_db
 from app.plan_routes import _fragment, _wants_json, household_today
 from app.routes import redirect, render
@@ -50,11 +50,19 @@ def _request_key(value) -> str | None:
     return value if _REQUEST_KEY.fullmatch(value) else None
 
 
-def _meal_or_404(conn: sqlite3.Connection, meal_id: int, kind: str | None = "recipe") -> dict:
-    """A planned dinner. Recipe-only features (servings, Add ingredients, assistant) pass kind="recipe"."""
+def _meal_or_404(conn: sqlite3.Connection, meal_id: int, session: auth.Session, kind: str | None = "recipe",
+                 request: Request | None = None) -> dict:
+    """A planned dinner in one of your Tables. Recipe-only features (servings, Add ingredients,
+    assistant) pass kind="recipe". Someone else's dinner is simply 'not found'."""
     meal = planner.get_meal(conn, meal_id)
-    if meal is None or (kind and meal["kind"] != kind):
+    if meal is None or not tables.is_member(conn, meal["table_id"], session.user_id):
         raise HTTPException(status_code=404, detail="That dinner isn't on the plan anymore.")
+    if kind and meal["kind"] != kind:
+        raise HTTPException(status_code=404, detail="That dinner isn't on the plan anymore.")
+    if request is not None:
+        request.state.scope = tables.resolve(conn, session, meal["table_id"], strict=True)
+        if session.active_table_id != meal["table_id"]:
+            tables.remember(conn, session, meal["table_id"])
     return meal
 
 
@@ -71,14 +79,14 @@ def _context(request: Request, conn: sqlite3.Connection, meal: dict, session: au
         "messages": meal_chat.history(conn, meal["id"]),
         "request_key": secrets.token_urlsafe(16),
         "csrf_token": session.csrf_token, "is_past": meal["date"] < today, "is_tonight": meal["date"] == today,
-        "week_iso": meal["week_start"],
+        "week_iso": meal["week_start"], "table_id": meal["table_id"],
     }
 
 
 def _updated(request: Request, conn: sqlite3.Connection, meal_id: int, session: auth.Session,
              message: str = "", error: str = "", status_code: int = 200, anchor: str = ""):
     """After a change: fresh fragments for JavaScript, or back to the page for plain forms."""
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     if _wants_json(request):
         context = _context(request, conn, meal, session)
         return JSONResponse({
@@ -100,7 +108,7 @@ def _updated(request: Request, conn: sqlite3.Connection, meal_id: int, session: 
 def planned_meal(request: Request, meal_id: int, msg: str = "",
                  session: auth.Session = Depends(auth.require_session),
                  conn: sqlite3.Connection = Depends(get_db)):
-    meal = _meal_or_404(conn, meal_id, kind=None)
+    meal = _meal_or_404(conn, meal_id, session, kind=None, request=request)
     if meal["kind"] == "packaged":
         from app.packaged_routes import packaged_page   # a scanned store-bought meal
         return packaged_page(request, conn, meal, session, PACKAGED_MESSAGES.get(msg, ""))
@@ -115,7 +123,7 @@ async def meal_servings(request: Request, meal_id: int,
                         conn: sqlite3.Connection = Depends(get_db)):
     """The serving selector: change, or reset to the recipe's own yield. Only this dinner changes."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
-    _meal_or_404(conn, meal_id)
+    _meal_or_404(conn, meal_id, session, request=request)
     reset = form.get("reset") is not None
     # The −/+ buttons send "servings"; typing a number (or pressing Enter) sends "servings_typed".
     servings = None if reset else clean_servings(form.get("servings") or form.get("servings_typed"))
@@ -134,7 +142,7 @@ async def recipe_yield(request: Request, meal_id: int,
                        conn: sqlite3.Connection = Depends(get_db)):
     """An older recipe with no serving count: record how many it makes so it can be scaled."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     servings = clean_servings(form.get("servings"))
     if servings is None:
         return _updated(request, conn, meal_id, session, error="Enter how many servings the recipe makes (1 to 100).",
@@ -149,7 +157,7 @@ async def recipe_yield(request: Request, meal_id: int,
 def meal_checklist(request: Request, meal_id: int,
                    session: auth.Session = Depends(auth.require_session),
                    conn: sqlite3.Connection = Depends(get_db)):
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     context = _context(request, conn, meal, session)
     if _wants_json(request):
         return JSONResponse({"html": _fragment("_meal_checklist.html", context)})
@@ -159,7 +167,7 @@ def meal_checklist(request: Request, meal_id: int,
 def _checklist_done(request, conn, meal_id, session, message="", error="", status_code=200):
     if _wants_json(request) or error:
         return _updated(request, conn, meal_id, session, message, error, status_code)
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     return redirect(f"/shopping?week={meal['week_start']}")
 
 
@@ -169,7 +177,7 @@ async def meal_add_ingredients(request: Request, meal_id: int,
                                conn: sqlite3.Connection = Depends(get_db)):
     """Add only the checked ingredients of this dinner to the shared list."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
-    _meal_or_404(conn, meal_id)
+    _meal_or_404(conn, meal_id, session, request=request)
     indexes = [int(v) for v in form.getlist("ingredient") if str(v).isdigit()]
     seen = form.get("servings_seen")
     try:
@@ -191,7 +199,7 @@ async def meal_update_ingredients(request: Request, meal_id: int,
                                   conn: sqlite3.Connection = Depends(get_db)):
     """Only when asked: change this dinner's amounts on the list to its new serving count."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
-    _meal_or_404(conn, meal_id)
+    _meal_or_404(conn, meal_id, session, request=request)
     try:
         result = shopping.update_meal_ingredients(conn, meal_id, _request_key(form.get("request_key")))
     except shopping.ListError as exc:
@@ -216,7 +224,7 @@ async def chat_send(request: Request, meal_id: int,
                     session: auth.Session = Depends(auth.require_session),
                     conn: sqlite3.Connection = Depends(get_db)):
     form = await auth.read_form_with_csrf(request, session.csrf_token)
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     text = " ".join(str(form.get("message") or "").split())[:assistant.MAX_MESSAGE]
     if not text:
         return _updated(request, conn, meal_id, session, error="Type or say a question first.", status_code=422,
@@ -237,7 +245,7 @@ async def chat_send(request: Request, meal_id: int,
             planner.set_meal_servings(conn, meal_id, None if reply.reset_servings else reply.servings)
     except planner.PlanError as exc:
         reply = assistant.Reply(str(exc))
-    if reply.kind == "servings" and shopping.meal_checklist(conn, _meal_or_404(conn, meal_id))["outdated"]:
+    if reply.kind == "servings" and shopping.meal_checklist(conn, _meal_or_404(conn, meal_id, session, request=request))["outdated"]:
         reply.body += (" Groceries you already added for this dinner are still for the old amount; "
                        "open Add ingredients if you want to update them.")
     meal_chat.save_reply(conn, meal, reply)
@@ -252,7 +260,7 @@ async def proposal_decision(request: Request, meal_id: int, proposal_id: int, de
     await auth.read_form_with_csrf(request, session.csrf_token)
     if decision not in ("confirm", "cancel"):
         raise HTTPException(status_code=404, detail="We couldn't find that page.")
-    meal = _meal_or_404(conn, meal_id)
+    meal = _meal_or_404(conn, meal_id, session, request=request)
     try:
         meal_chat.decide_proposal(conn, meal, proposal_id, decision == "confirm")
     except meal_chat.ProposalError as exc:

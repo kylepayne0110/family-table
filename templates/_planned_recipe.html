@@ -4,6 +4,7 @@
     {% if recipe.servings %}
     <form class="servings__form" method="post" action="/plan/meals/{{ meal.id }}/servings" data-servings-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
         {#- First submit button: pressing Enter in the box submits the typed number, not "−". #}
         <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">Update</button>
         <p class="servings__label" id="servings-title">Cooking for</p>
@@ -23,6 +24,7 @@
     {#- Older recipes may not say how many they serve: ask once, so scaling is accurate. #}
     <form class="servings__form servings__form--yield" method="post" action="/plan/meals/{{ meal.id }}/yield" data-servings-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
         <p class="servings__label" id="servings-title">How many servings does this recipe make as written?</p>
         <p class="servings__note">It doesn't say, so amounts are shown as written. Tell us once and you can scale it.</p>
         <div class="servings__yield">

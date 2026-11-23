@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import UploadFile
 
 # Project modules.
-from app import auth, packaged, planner
+from app import auth, packaged, planner, tables
 from app.database import get_db
 from app.images import LABEL_MAX_EDGE, ImageError, delete_photo, process_photo
 from app.plan_routes import _week, _week_nav, household_today
@@ -39,12 +39,12 @@ def _day_or_404(week: date, day: int) -> None:
         raise HTTPException(status_code=404, detail="We couldn't find that day.")
 
 
-def _current_dinner(conn: sqlite3.Connection, week: date, day: int) -> dict | None:
+def _current_dinner(conn: sqlite3.Connection, table_id: int, week: date, day: int) -> dict | None:
     row = conn.execute(
         """SELECT p.id, COALESCE(r.name, pk.name) AS name FROM planned_meals p
            LEFT JOIN recipes r ON r.id = p.recipe_id LEFT JOIN packaged_meals pk ON pk.meal_id = p.id
-           WHERE p.week_start = ? AND p.day = ?""",
-        (week.isoformat(), day),
+           WHERE p.table_id = ? AND p.week_start = ? AND p.day = ?""",
+        (table_id, week.isoformat(), day),
     ).fetchone()
     return dict(row) if row else None
 
@@ -52,9 +52,10 @@ def _current_dinner(conn: sqlite3.Connection, week: date, day: int) -> dict | No
 def _scan_page(request, conn, session, week: date, day: int, values: dict | None = None, error: str = "",
                lookup: dict | None = None, status_code: int = 200):
     today = household_today(request)
+    scope = request.state.scope
     return render(request, "packaged_scan.html", {
         **_week_nav(week, today), "nav_active": "plan", "day": day, "day_name": planner.DAY_NAMES[day],
-        "day_date": week + timedelta(days=day), "current": _current_dinner(conn, week, day),
+        "day_date": week + timedelta(days=day), "current": _current_dinner(conn, scope.table_id, week, day),
         "is_past": planner.is_past(week, day, today), "values": values or {}, "error": error,
         "lookup": lookup, "max_upload_mb": request.app.state.settings.max_upload_mb,
     }, session, status_code)
@@ -65,6 +66,7 @@ async def scan_page(request: Request, week: str, day: int, barcode: str = "",
                     session: auth.Session = Depends(auth.require_session),
                     conn: sqlite3.Connection = Depends(get_db)):
     """The scan page. Without JavaScript, ?barcode=… looks the product up here and pre-fills the form."""
+    tables.scope_for_get(request, conn, session)
     wk = _week(week, household_today(request))
     _day_or_404(wk, day)
     if planner.is_past(wk, day, household_today(request)):
@@ -84,6 +86,8 @@ async def scan_page(request: Request, week: str, day: int, barcode: str = "",
 @router.get("/packaged/lookup")
 async def lookup(request: Request, barcode: str = "", session: auth.Session = Depends(auth.require_session)):
     """JSON lookup for the scan page's JavaScript."""
+    if auth.too_many(request, "search", f"user:{session.user_id}"):
+        return JSONResponse({"barcode": "", "problem": "Too many lookups. Wait a minute and try again."}, status_code=429)
     code = packaged.normalize_barcode(barcode[:30])
     problem = packaged.barcode_problem(code)
     if problem:
@@ -110,6 +114,7 @@ async def add_to_day(request: Request, week: str, day: int,
                      conn: sqlite3.Connection = Depends(get_db)):
     """Add to Friday: plan the reviewed meal. Never replaces a dinner without the family's say-so."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
+    scope = tables.scope_for_post(request, conn, session, form)
     today = household_today(request)
     wk = _week(week, today)
     _day_or_404(wk, day)
@@ -123,7 +128,7 @@ async def add_to_day(request: Request, week: str, day: int,
     except (packaged.PackagedError, ImageError) as exc:
         return _scan_page(request, conn, session, wk, day, values, error=str(exc), status_code=422)
     try:
-        meal_id, unused = packaged.add_packaged_meal(conn, wk, day, details, photo, replace_id, today)
+        meal_id, unused = packaged.add_packaged_meal(conn, scope.table_id, wk, day, details, photo, replace_id, today)
     except packaged.DayTaken as exc:
         delete_photo(settings.upload_dir, photo)
         error = str(exc) + (" A photo you chose needs to be added again." if photo else "")
@@ -149,7 +154,7 @@ def packaged_page(request: Request, conn: sqlite3.Connection, meal: dict, sessio
         "meal": meal, "item": packaged.get_packaged(conn, meal["id"]), "nav_active": "plan",
         "week_iso": meal["week_start"], "is_past": meal["date"] < today, "is_tonight": meal["date"] == today,
         "message": message, "error": error, "max_upload_mb": request.app.state.settings.max_upload_mb,
-        "source_url": packaged.OFF_PAGE_URL,
+        "source_url": packaged.OFF_PAGE_URL, "table_id": meal["table_id"],
     }, session, status_code)
 
 
@@ -160,8 +165,9 @@ async def update_directions(request: Request, meal_id: int,
     """Attach or fix directions and the label photo later."""
     form = await auth.read_form_with_csrf(request, session.csrf_token)
     meal = planner.get_meal(conn, meal_id)
-    if meal is None or meal["kind"] != "packaged":
+    if meal is None or meal["kind"] != "packaged" or not tables.is_member(conn, meal["table_id"], session.user_id):
         raise HTTPException(status_code=404, detail="That dinner isn't on the plan anymore.")
+    request.state.scope = tables.resolve(conn, session, meal["table_id"], strict=True)
     settings = request.app.state.settings
     try:
         photo = await _label_photo(request, form)

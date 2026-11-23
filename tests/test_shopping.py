@@ -19,7 +19,7 @@ from app.database import connect
 
 # Shared helpers.
 from tests.conftest import login
-from tests.plan_helpers import (BURGERS, FETCH, PARM, TACOS, W, WEEK, add_ingredients, add_recipe, all_items,
+from tests.plan_helpers import (table_id, BURGERS, PARM, TACOS, W, WEEK, add_ingredients, add_recipe, all_items,
                                 checked, checklist, item, meal_id, plan, post, query, shop_week, state, token)
 
 
@@ -385,12 +385,13 @@ def test_deleted_item_reports_missing(auth_client, second_phone, settings):
 def test_concurrent_changes_are_all_saved(auth_client, settings, week_of_tacos):
     """Many simultaneous writes (two phones tapping fast) lose nothing and create no duplicates."""
     errors = []
+    tid = table_id(settings)
 
     def worker(n):
         conn = connect(settings.database_path)
         try:
-            shopping.add_item(conn, WEEK, f"Thing {n}")
-            shopping.add_item(conn, WEEK, "Milk")          # everyone adds milk
+            shopping.add_item(conn, tid, WEEK, f"Thing {n}")
+            shopping.add_item(conn, tid, WEEK, "Milk")          # everyone adds milk
             meal = conn.execute("SELECT id FROM planned_meals WHERE day = 0").fetchone()[0]
             shopping.add_meal_ingredients(conn, meal, [0, 1, 2, 3], None)   # and adds Monday's dinner
         except Exception as exc:  # noqa: BLE001 - collect anything for the assertion

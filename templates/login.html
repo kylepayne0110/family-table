@@ -26,11 +26,10 @@
             </div>
 
             <div class="index-card__lines login-card__body">
-                {% if not configured %}
-                <p class="form-alert" role="alert">
-                    The family login isn't set up yet. In the project folder, run
-                    <code>python -m app.setup_login</code>, then restart the server.
-                </p>
+                {% if invite_view %}{% include "_invite_banner.html" %}{% endif %}
+                <input type="hidden" name="invite" value="{{ invite or '' }}">
+                {% if request.query_params.get("reset") %}
+                <p class="form-note" role="status">Password changed. Sign in with your new password.</p>
                 {% endif %}
 
                 {% if error %}
@@ -58,7 +57,8 @@
             </div>
         </form>
 
-        <p class="hand-note login-hint">Forgot the password? Ask Dad.</p>
+        <p class="login-alt">New here? <a class="text-link-inline" href="/signup{% if invite %}?invite={{ invite | urlencode }}{% endif %}">Create an account</a></p>
+        <p class="hand-note login-hint"><a href="/forgot">Forgot your password?</a></p>
     </div>
 </section>
 {% endblock %}

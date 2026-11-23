@@ -336,11 +336,11 @@ def test_packaged_meal_stays_in_history_after_friday(auth_client, settings):
 # ---- Upgrading a database where every planned dinner needed a recipe ----
 
 def test_upgrade_keeps_planned_meals_and_their_conversations(settings):
+    from app.migrations import LEGACY_SCHEMA
     db_path = settings.database_path
     db_path.parent.mkdir(parents=True)
-    with TestClient(create_app(settings)) as c:     # current schema, then make it look like the previous release
-        pass
-    old = sqlite3.connect(db_path)
+    old = sqlite3.connect(db_path)          # the single-family layout, before packaged meals
+    old.executescript(LEGACY_SCHEMA)
     old.executescript("""
         PRAGMA foreign_keys = OFF;
         PRAGMA legacy_alter_table = ON;

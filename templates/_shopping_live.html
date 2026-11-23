@@ -5,6 +5,7 @@
 
 {% macro hidden(item, status) -%}
 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="table_id" value="{{ table_id }}">
 <input type="hidden" name="rev" value="{{ item.rev }}">
 {%- if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
 {%- endmacro %}
@@ -136,6 +137,7 @@
         <p class="shop-section__hint">Tapped one by mistake? Tap it again to put it back.</p>
         <form method="post" action="{{ base }}/clear-purchased" data-list-form data-clears>
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             <button type="submit" class="btn btn-outline btn-sm">Clear purchased</button>
         </form>
     </div>

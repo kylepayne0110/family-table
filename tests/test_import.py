@@ -409,6 +409,14 @@ def test_temp_photo_route_requires_login_and_safe_names(auth_client, settings):
     settings.import_dir.mkdir(parents=True, exist_ok=True)
     name = "a" * 32 + ".webp"
     (settings.import_dir / name).write_bytes(make_image("WEBP", (10, 10)))
+    # A file nobody imported (or someone else's) is never shown.
+    assert auth_client.get(f"/photos/import/{name}").status_code == 404
+    from app.database import connect
+    conn = connect(settings.database_path)
+    with conn:
+        conn.execute("INSERT INTO temp_photos (filename, user_id, table_id) SELECT ?, id, last_table_id FROM users",
+                     (name,))
+    conn.close()
     assert auth_client.get(f"/photos/import/{name}").status_code == 200
     assert auth_client.get("/photos/import/..%2Ffamily_table.db").status_code == 404
     auth_client.cookies.clear()

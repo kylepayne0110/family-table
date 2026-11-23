@@ -20,6 +20,7 @@
 
 <form class="add-item" method="post" action="/staples">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
     <input type="hidden" name="week" value="{{ week_iso }}">
     <label class="visually-hidden" for="staple-name">Add a staple</label>
     <input id="staple-name" class="add-item__name" type="text" name="name" value="{{ name }}" placeholder="Add a staple, e.g. Cumin" maxlength="80" autocomplete="off" required>
@@ -39,6 +40,7 @@
         <span class="staple__name">{{ st.name }}</span>
         <form method="post" action="/staples/{{ st.id }}/list">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             <input type="hidden" name="week" value="{{ week_iso }}">
             <button type="submit" class="btn btn-outline btn-sm" aria-label="Add {{ st.name }} to this week's shopping list">Add to list</button>
         </form>
@@ -47,6 +49,7 @@
             <div class="item-menu__panel">
                 <form class="item-edit" method="post" action="/staples/{{ st.id }}/edit">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <input type="hidden" name="week" value="{{ week_iso }}">
                     <label for="staple-{{ st.id }}">Name</label>
                     <input id="staple-{{ st.id }}" type="text" name="name" value="{{ st.name }}" maxlength="80" required>
@@ -54,6 +57,7 @@
                 </form>
                 <form method="post" action="/staples/{{ st.id }}/delete">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <input type="hidden" name="week" value="{{ week_iso }}">
                     <button type="submit" class="menu-button menu-button--danger">Remove from staples</button>
                 </form>

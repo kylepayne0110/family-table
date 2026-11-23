@@ -48,23 +48,25 @@ def week_label(week: date) -> str:
     return f"{week:%b %-d} – {end:%-d}, {end.year}"
 
 
-def ensure_week(conn: sqlite3.Connection, week: date) -> None:
-    """Create the week's row if it doesn't exist (call inside a transaction)."""
-    conn.execute("INSERT OR IGNORE INTO week_plans (week_start) VALUES (?)", (week.isoformat(),))
+def ensure_week(conn: sqlite3.Connection, table_id: int, week: date) -> None:
+    """Create the Table's row for the week if it doesn't exist (call inside a transaction)."""
+    conn.execute("INSERT OR IGNORE INTO week_plans (table_id, week_start) VALUES (?, ?)", (table_id, week.isoformat()))
 
 
-def versions(conn: sqlite3.Connection, week: date) -> tuple[int, int]:
-    """(plan_version, list_version) for a week; (0, 0) if nothing is stored yet."""
+def versions(conn: sqlite3.Connection, table_id: int, week: date) -> tuple[int, int]:
+    """(plan_version, list_version) for a Table's week; (0, 0) if nothing is stored yet."""
     row = conn.execute(
-        "SELECT plan_version, list_version FROM week_plans WHERE week_start = ?", (week.isoformat(),)
+        "SELECT plan_version, list_version FROM week_plans WHERE table_id = ? AND week_start = ?",
+        (table_id, week.isoformat()),
     ).fetchone()
     return (row["plan_version"], row["list_version"]) if row else (0, 0)
 
 
-def _bump_plan(conn: sqlite3.Connection, week: date) -> None:
+def _bump_plan(conn: sqlite3.Connection, table_id: int, week: date) -> None:
     conn.execute(
-        "UPDATE week_plans SET plan_version = plan_version + 1, updated_at = datetime('now') WHERE week_start = ?",
-        (week.isoformat(),),
+        """UPDATE week_plans SET plan_version = plan_version + 1, updated_at = datetime('now')
+           WHERE table_id = ? AND week_start = ?""",
+        (table_id, week.isoformat()),
     )
 
 
@@ -79,7 +81,7 @@ def is_past(week: date, day: int, today: date) -> bool:
     return day_date(week, day) < today
 
 
-def get_plan(conn: sqlite3.Connection, week: date, today: date | None = None) -> list[dict]:
+def get_plan(conn: sqlite3.Connection, table_id: int, week: date, today: date | None = None) -> list[dict]:
     """Seven day dicts: name, date, is_today, is_past, and the planned recipe (or None).
 
     `recipe` includes `meal_id` and the dinner's serving count.
@@ -93,8 +95,8 @@ def get_plan(conn: sqlite3.Connection, week: date, today: date | None = None) ->
                   pk.brand, pk.package_size
            FROM planned_meals p LEFT JOIN recipes r ON r.id = p.recipe_id
            LEFT JOIN packaged_meals pk ON pk.meal_id = p.id
-           WHERE p.week_start = ? AND (r.id IS NOT NULL OR pk.id IS NOT NULL)""",
-        (week.isoformat(),),
+           WHERE p.table_id = ? AND p.week_start = ? AND (r.id IS NOT NULL OR pk.id IS NOT NULL)""",
+        (table_id, week.isoformat()),
     ).fetchall()
     by_day = {row["day"]: dict(row) for row in rows}
     days = []
@@ -110,7 +112,7 @@ def get_plan(conn: sqlite3.Connection, week: date, today: date | None = None) ->
 def get_meal(conn: sqlite3.Connection, meal_id: int) -> dict | None:
     """One planned dinner with its recipe's basics, or None."""
     row = conn.execute(
-        """SELECT p.id, p.week_start, p.day, p.recipe_id, p.servings AS meal_servings,
+        """SELECT p.id, p.table_id, p.week_start, p.day, p.recipe_id, p.servings AS meal_servings,
                   COALESCE(r.name, pk.name) AS recipe_name, r.servings AS recipe_servings,
                   CASE WHEN p.recipe_id IS NULL THEN 'packaged' ELSE 'recipe' END AS kind
            FROM planned_meals p LEFT JOIN recipes r ON r.id = p.recipe_id
@@ -129,10 +131,10 @@ def get_meal(conn: sqlite3.Connection, meal_id: int) -> dict | None:
     return meal
 
 
-def recipe_choices(conn: sqlite3.Connection, query: str = "") -> list[sqlite3.Row]:
-    """Recipes for the picker, filtered by name words."""
-    sql = "SELECT id, name, photo_filename, prep_minutes, cook_minutes FROM recipes WHERE 1 = 1"
-    params: list = []
+def recipe_choices(conn: sqlite3.Connection, table_id: int, query: str = "") -> list[sqlite3.Row]:
+    """A Table's recipes for the picker, filtered by name words."""
+    sql = "SELECT id, name, photo_filename, prep_minutes, cook_minutes FROM recipes WHERE table_id = ?"
+    params: list = [table_id]
     for term in query.split()[:8]:
         escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         sql += " AND name LIKE ? ESCAPE '\\'"
@@ -159,7 +161,8 @@ def _label_photos(conn: sqlite3.Connection, where: str, params: tuple) -> list[s
             WHERE {where} AND pk.label_photo IS NOT NULL""", params)]
 
 
-def set_meal(conn: sqlite3.Connection, week: date, day: int, recipe_id: int, today: date | None = None) -> list[str]:
+def set_meal(conn: sqlite3.Connection, table_id: int, week: date, day: int, recipe_id: int,
+             today: date | None = None) -> list[str]:
     """Plan a recipe for a day, replacing whatever was there (the "Change" picker).
 
     Choosing the recipe that's already planned keeps that dinner (and its servings and chat).
@@ -167,34 +170,39 @@ def set_meal(conn: sqlite3.Connection, week: date, day: int, recipe_id: int, tod
     replaced packaged meal, for the caller to delete.
     """
     _check_day(day, week, today)
-    if conn.execute("SELECT 1 FROM recipes WHERE id = ?", (recipe_id,)).fetchone() is None:
-        raise PlanError("That recipe isn't in the box anymore.")
     w = week.isoformat()
     with write_transaction(conn):
-        ensure_week(conn, week)
+        # Only a recipe from this Table's own book can be planned here.
+        if conn.execute("SELECT 1 FROM recipes WHERE id = ? AND table_id = ?", (recipe_id, table_id)).fetchone() is None:
+            raise PlanError("That recipe isn't in the box anymore.")
+        ensure_week(conn, table_id, week)
         # "recipe_id IS NULL" covers a packaged meal (NULL != x is never true in SQL).
-        photos = _label_photos(conn, "p.week_start = ? AND p.day = ? AND (p.recipe_id IS NULL OR p.recipe_id != ?)",
-                               (w, day, recipe_id))
-        conn.execute("DELETE FROM planned_meals WHERE week_start = ? AND day = ? AND (recipe_id IS NULL OR recipe_id != ?)",
-                     (w, day, recipe_id))
-        if conn.execute("SELECT 1 FROM planned_meals WHERE week_start = ? AND day = ?", (w, day)).fetchone() is None:
-            conn.execute("INSERT INTO planned_meals (week_start, day, recipe_id) VALUES (?, ?, ?)", (w, day, recipe_id))
-        _bump_plan(conn, week)
+        photos = _label_photos(conn, "p.table_id = ? AND p.week_start = ? AND p.day = ? "
+                                     "AND (p.recipe_id IS NULL OR p.recipe_id != ?)", (table_id, w, day, recipe_id))
+        conn.execute("""DELETE FROM planned_meals WHERE table_id = ? AND week_start = ? AND day = ?
+                        AND (recipe_id IS NULL OR recipe_id != ?)""", (table_id, w, day, recipe_id))
+        if conn.execute("SELECT 1 FROM planned_meals WHERE table_id = ? AND week_start = ? AND day = ?",
+                        (table_id, w, day)).fetchone() is None:
+            conn.execute("INSERT INTO planned_meals (table_id, week_start, day, recipe_id) VALUES (?, ?, ?, ?)",
+                         (table_id, w, day, recipe_id))
+        _bump_plan(conn, table_id, week)
     return photos
 
 
-def clear_meal(conn: sqlite3.Connection, week: date, day: int, today: date | None = None) -> list[str]:
+def clear_meal(conn: sqlite3.Connection, table_id: int, week: date, day: int, today: date | None = None) -> list[str]:
     """Leave a day blank (leftovers, eating out, or no plan). Returns label photos to delete."""
     _check_day(day, week, today)
+    w = week.isoformat()
     with write_transaction(conn):
-        ensure_week(conn, week)
-        photos = _label_photos(conn, "p.week_start = ? AND p.day = ?", (week.isoformat(), day))
-        conn.execute("DELETE FROM planned_meals WHERE week_start = ? AND day = ?", (week.isoformat(), day))
-        _bump_plan(conn, week)
+        ensure_week(conn, table_id, week)
+        photos = _label_photos(conn, "p.table_id = ? AND p.week_start = ? AND p.day = ?", (table_id, w, day))
+        conn.execute("DELETE FROM planned_meals WHERE table_id = ? AND week_start = ? AND day = ?", (table_id, w, day))
+        _bump_plan(conn, table_id, week)
     return photos
 
 
-def move_meal(conn: sqlite3.Connection, week: date, from_day: int, to_day: int, today: date | None = None) -> None:
+def move_meal(conn: sqlite3.Connection, table_id: int, week: date, from_day: int, to_day: int,
+              today: date | None = None) -> None:
     """Move a dinner to another day. If that day has a dinner, the two swap.
 
     The rows keep their ids, so each dinner's servings, shopping additions, and chat go with it.
@@ -205,17 +213,17 @@ def move_meal(conn: sqlite3.Connection, week: date, from_day: int, to_day: int, 
         return
     w = week.isoformat()
     with write_transaction(conn):
-        ensure_week(conn, week)
+        ensure_week(conn, table_id, week)
         meals = dict(conn.execute(
-            "SELECT day, id FROM planned_meals WHERE week_start = ? AND day IN (?, ?)",
-            (w, from_day, to_day),
+            "SELECT day, id FROM planned_meals WHERE table_id = ? AND week_start = ? AND day IN (?, ?)",
+            (table_id, w, from_day, to_day),
         ).fetchall())
         if from_day not in meals:
             raise PlanError("There's no dinner on that day to move.")
         conn.execute("UPDATE planned_meals SET day = ? WHERE id = ?", (to_day, meals[from_day]))
         if to_day in meals:
             conn.execute("UPDATE planned_meals SET day = ? WHERE id = ?", (from_day, meals[to_day]))
-        _bump_plan(conn, week)
+        _bump_plan(conn, table_id, week)
 
 
 def set_meal_servings(conn: sqlite3.Connection, meal_id: int, servings: int | None) -> dict:
@@ -234,7 +242,7 @@ def set_meal_servings(conn: sqlite3.Connection, meal_id: int, servings: int | No
         if servings == meal["recipe_servings"]:
             servings = None   # same as the recipe: store it as "not changed"
         conn.execute("UPDATE planned_meals SET servings = ? WHERE id = ?", (servings, meal_id))
-        _bump_plan(conn, meal["week"])
+        _bump_plan(conn, meal["table_id"], meal["week"])
     return get_meal(conn, meal_id)
 
 

@@ -54,6 +54,11 @@ class Settings:
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:1.7b"
     ollama_timeout: float = 90.0
+    # Upgrade only: the name shown for the first account and the family's first Table.
+    display_name: str = ""
+    table_name: str = ""
+    # How many model requests may run at once (the rest get "busy, try again" right away).
+    model_concurrency: int = 2
 
     @property
     def zone(self) -> ZoneInfo:
@@ -104,4 +109,7 @@ def load_settings() -> Settings:
         ollama_url=(os.getenv("OLLAMA_URL") or "http://127.0.0.1:11434").strip().rstrip("/"),
         ollama_model=(os.getenv("OLLAMA_MODEL") or "qwen3:1.7b").strip(),
         ollama_timeout=float(os.getenv("OLLAMA_TIMEOUT_SECONDS") or 90),
+        display_name=(os.getenv("FAMILY_DISPLAY_NAME") or "").strip()[:60],
+        table_name=(os.getenv("FAMILY_TABLE_NAME") or "").strip()[:60],
+        model_concurrency=max(1, int(os.getenv("OLLAMA_MAX_CONCURRENT") or 2)),
     )

@@ -23,6 +23,7 @@
 
 <form class="add-item" method="post" action="/shopping/{{ week_iso }}/items" data-add-item>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
     <label class="visually-hidden" for="add-name">Add an item</label>
     <input id="add-name" class="add-item__name" type="text" name="name" placeholder="Add an item..." maxlength="120" autocomplete="off" enterkeyhint="done" required>
     <label class="visually-hidden" for="add-qty">Quantity (optional)</label>
@@ -32,7 +33,7 @@
 
 <p class="sync-status" data-sync-status role="status" aria-live="polite" hidden></p>
 
-<div data-live data-live-url="/shopping/{{ week_iso }}/live" data-version="{{ state.version }}">
+<div data-live data-live-url="/shopping/{{ week_iso }}/live?table={{ table_id }}" data-version="{{ state.version }}">
     {% include "_shopping_live.html" %}
 </div>
 

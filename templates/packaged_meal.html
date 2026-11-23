@@ -74,6 +74,7 @@
         <summary class="text-link">{{ icon("pencil", 16) }}{{ "Fix directions or photo" if (any_text or item.label_photo) else "Add directions or a photo" }}</summary>
         <form class="pk-edit__form" method="post" action="/plan/meals/{{ meal.id }}/packaged" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             {% for key, label in [("oven", "Oven"), ("microwave", "Microwave"), ("other", "Other directions")] %}
             <div class="field">
                 <label for="ed-{{ key }}">{{ label }}</label>

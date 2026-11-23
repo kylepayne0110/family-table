@@ -29,7 +29,7 @@
 
 <p class="sync-status" data-sync-status role="status" aria-live="polite" hidden></p>
 
-<div data-live data-live-url="/plan/{{ week_iso }}/live" data-version="{{ plan_version }}">
+<div data-live data-live-url="/plan/{{ week_iso }}/live?table={{ table_id }}" data-version="{{ plan_version }}">
     {% include "_plan_board.html" %}
 </div>
 

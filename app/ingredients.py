@@ -65,7 +65,7 @@ _DROP_WORDS = {
 # After a comma, these words start preparation notes ("garlic, minced"), not more ingredient.
 _COMMA_NOTES = _DROP_WORDS | {
     "for", "to", "plus", "about", "see", "note", "from", "cut", "at", "such", "if", "or",
-    "and", "room", "cold", "warm", "at", "stems", "seeded", "patted", "crumbled", "torn",
+    "and", "room", "cold", "warm", "stems", "seeded", "patted", "crumbled", "torn",
 }
 
 # Cooking states that mean nothing to buy on their own ("cooked, halved squash").

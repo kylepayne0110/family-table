@@ -21,14 +21,27 @@ W = WEEK.isoformat()
 FETCH = {"x-requested-with": "fetch"}
 
 
-def add_recipe(settings, name: str, ingredients: list[tuple[str, str]], photo: str | None = None) -> int:
+def table_id(settings, name: str | None = None) -> int:
+    """The test family's Table (the first one), or the Table with this name."""
+    conn = connect(settings.database_path)
+    try:
+        if name:
+            return conn.execute("SELECT id FROM family_tables WHERE name = ?", (name,)).fetchone()[0]
+        return conn.execute("SELECT id FROM family_tables ORDER BY id LIMIT 1").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def add_recipe(settings, name: str, ingredients: list[tuple[str, str]], photo: str | None = None,
+               table: int | None = None) -> int:
     """Save a recipe straight to the test database (much faster than the form)."""
+    tid = table or table_id(settings)
     conn = connect(settings.database_path)
     try:
         data = RecipeData(name=name, description="", category="weeknight", cuisine="", prep_minutes=10,
                           cook_minutes=20, servings=4, card_tag="", last_made=None,
                           ingredients=ingredients, steps=[("", "Cook it.")])
-        return save_recipe(conn, data, photo)
+        return save_recipe(conn, data, photo, table_id=tid)
     finally:
         conn.close()
 
@@ -84,10 +97,11 @@ def shop_week(client, settings, week: str = W):
         add_ingredients(client, settings, day, week=week)
 
 
-def state(settings, week: date = WEEK) -> dict:
+def state(settings, week: date = WEEK, table: int | None = None) -> dict:
+    tid = table or table_id(settings)
     conn = connect(settings.database_path)
     try:
-        return list_state(conn, week)
+        return list_state(conn, tid, week)
     finally:
         conn.close()
 

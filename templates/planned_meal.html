@@ -59,6 +59,7 @@
     </div>
     <form class="assistant__form" method="post" action="/plan/meals/{{ meal.id }}/chat" data-assistant-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="table_id" value="{{ table_id }}">
         <input type="hidden" name="request_key" value="{{ request_key }}">
         <p class="assistant__note" data-assistant-note hidden></p>
         <div class="assistant__row">

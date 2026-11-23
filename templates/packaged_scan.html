@@ -78,6 +78,7 @@
 <form id="review" class="scan-step scan-review" method="post" action="/plan/{{ week_iso }}/day/{{ day }}/packaged"
       enctype="multipart/form-data" data-review-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
     <h2 class="scan-step__title"><span>2</span>Check the details</h2>
 
     <div class="field">

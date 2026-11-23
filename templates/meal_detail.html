@@ -23,6 +23,13 @@
         </p>
         <h1 class="recipe__title">{{ recipe.name }}</h1>
         {% if recipe.description %}<p class="recipe__lede">{{ recipe.description }}</p>{% endif %}
+        {% if recipe.creator_credit or added_by_name or recipe.community_credit %}
+        <p class="recipe__credit">
+            {%- if recipe.creator_credit %}Created by <strong>{{ recipe.creator_credit }}</strong>{% endif -%}
+            {%- if recipe.creator_credit and (added_by_name or recipe.community_credit) %} &middot; {% endif -%}
+            {%- if recipe.community_credit %}{{ recipe.community_credit }}{% elif added_by_name %}Added by {{ added_by_name }}{% endif -%}
+        </p>
+        {% endif %}
         {% if recipe.source_url %}
         <a class="text-link source-link" href="{{ recipe.source_url }}" target="_blank" rel="noopener noreferrer nofollow">
             Original recipe {{ icon("arrow-right", 16) }}<span class="source-link__host">{{ recipe.source_url | hostname }}</span>
@@ -53,6 +60,7 @@
             {% else %}
                 <form method="post" action="/recipes/{{ recipe.id }}/made">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <button type="submit" class="link-button link-button--accent">We made it today</button>
                 </form>
             {% endif %}
@@ -118,6 +126,8 @@
         </section>
     </div>
 
+    {% include "_share_status.html" %}
+
     <section class="notes" id="notes" aria-labelledby="notes-title">
         <div class="notes__head">
             <h2 class="section-title" id="notes-title">Notes from the <em>kitchen</em></h2>
@@ -127,6 +137,7 @@
         <form id="note-form" class="index-card note-form{% if not note_error %} js-collapsed{% endif %}"
               method="post" action="/recipes/{{ recipe.id }}/notes">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="table_id" value="{{ table_id }}">
             <div class="index-card__head">
                 <h3 class="note-form__title">A new note</h3>
                 <span class="eyebrow">For the back of the card</span>
@@ -158,6 +169,7 @@
                 <form method="post" action="/recipes/{{ recipe.id }}/notes/{{ note.id }}/delete"
                       class="note-card__delete" data-confirm="Remove this note?">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <button type="submit" class="icon-button" aria-label="Remove note from {{ note.author }}">{{ icon("x", 16) }}</button>
                 </form>
             </article>

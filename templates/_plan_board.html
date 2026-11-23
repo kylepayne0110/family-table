@@ -60,6 +60,7 @@
                     <summary class="mini-link">Move</summary>
                     <form class="move-menu__form" method="post" action="/plan/{{ week_iso }}/move" data-plan-form>
                         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="table_id" value="{{ table_id }}">
                         <input type="hidden" name="from_day" value="{{ d.index }}">
                         <label class="visually-hidden" for="move-{{ d.index }}">Move {{ r.name }} to</label>
                         <select id="move-{{ d.index }}" name="to_day">
@@ -72,6 +73,7 @@
                 </details>
                 <form method="post" action="/plan/{{ week_iso }}/day/{{ d.index }}/clear" data-plan-form>
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="table_id" value="{{ table_id }}">
                     <button type="submit" class="mini-link mini-link--muted" aria-label="Remove {{ r.name }} from {{ d.name }}">Remove</button>
                 </form>
             </div>

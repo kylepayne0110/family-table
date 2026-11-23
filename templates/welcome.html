@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<section class="welcome">
+    <p class="eyebrow">{{ "Another Table" if has_tables else "Welcome, " ~ user_name }}</p>
+    <h1 class="display display--sm">Start a <em>Table</em></h1>
+    <p class="welcome__lede">A Table is where people share <strong>recipes</strong>, <strong>dinners</strong>, and
+       <strong>groceries</strong>. Everyone at your Table sees the same recipe book, weekly meal plan, and grocery list.</p>
+
+    <form class="index-card simple-card welcome__form" method="post" action="/tables/new">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="index-card__lines simple-card__body">
+            {% if error %}<p class="form-alert" role="alert">{{ error }}</p>{% endif %}
+            <div class="field">
+                <label for="table-name">Name your Table</label>
+                <input id="table-name" name="name" type="text" value="{{ name }}" maxlength="60" required>
+                <p class="field-hint">You can change it any time, for example to &ldquo;The Smiths' Table.&rdquo;</p>
+            </div>
+            <button type="submit" class="btn btn-primary">Create {{ "another " if has_tables }}Table</button>
+            <p class="form-fineprint">You can start using it right away. Inviting people is optional.</p>
+        </div>
+    </form>
+
+    <p class="welcome__join"><strong>Joining someone else's Table?</strong> Open the invite link they sent you.</p>
+    {% if has_tables %}<p><a class="text-link-inline" href="/">Back to my recipes</a></p>{% endif %}
+</section>
+{% endblock %}

@@ -3,6 +3,7 @@
 {% set count = checklist.selected %}
 <form class="checklist" method="post" action="/plan/meals/{{ meal.id }}/ingredients" data-checklist-form>
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="table_id" value="{{ table_id }}">
     {#- A new key per form: sending the same form twice (double tap, retry) adds nothing the second time. #}
     <input type="hidden" name="request_key" value="{{ request_key }}">
     <input type="hidden" name="servings_seen" value="{{ meal.servings or '' }}">

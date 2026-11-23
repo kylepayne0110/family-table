@@ -17,7 +17,10 @@ from tests.conftest import create_recipe, login, make_image, recipe_id_from
 
 
 # The only routes a stranger may use. Everything else must send them to sign in.
-PUBLIC = {("GET", "/login"), ("POST", "/login"), ("GET", "/manifest.webmanifest"), ("GET", "/sw.js")}
+PUBLIC = {("GET", "/login"), ("POST", "/login"), ("GET", "/manifest.webmanifest"), ("GET", "/sw.js"),
+          ("GET", "/signup"), ("POST", "/signup"), ("GET", "/forgot"),
+          ("GET", "/reset/sample-token-123"), ("POST", "/reset/sample-token-123"),
+          ("GET", "/invite/sample-token-123")}
 
 
 def api_routes(routes):
@@ -33,7 +36,8 @@ def all_routes(app):
     """(method, path with sample values) for every route the app defines."""
     samples = {"{recipe_id}": "1", "{note_id}": "1", "{filename}": "a" * 32 + ".webp", "{week}": "2026-11-09",
                "{day}": "0", "{item_id}": "1", "{action}": "status", "{staple_id}": "1",
-               "{meal_id}": "1", "{proposal_id}": "1", "{decision}": "confirm"}
+               "{meal_id}": "1", "{proposal_id}": "1", "{decision}": "confirm", "{token}": "sample-token-123",
+               "{listing_id}": "1", "{draft_id}": "1"}
     for route in api_routes(app.routes):
         path = route.path
         for key, value in samples.items():

@@ -200,7 +200,28 @@ function focusErrors() {
   if (summary) summary.focus();
 }
 
+// The Table switcher: close it when tapping elsewhere, and never carry this Table's unsaved
+// ticks, chat drafts, or recipe drafts kept in this tab into the next Table.
+function setupTableSwitch() {
+  const menu = document.querySelector("[data-table-switch]");
+  if (!menu) return;
+  document.addEventListener("click", (event) => {
+    if (menu.open && !menu.contains(event.target)) menu.open = false;
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); }
+  });
+  menu.querySelectorAll("[data-table-switch-form]").forEach((form) => {
+    form.addEventListener("submit", () => {
+      try {
+        Object.keys(sessionStorage).filter((k) => k.startsWith("ft-")).forEach((k) => sessionStorage.removeItem(k));
+      } catch { /* storage blocked */ }
+    });
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  setupTableSwitch();
   showLocalDate();
   setupIngredients();
   setupRows();

@@ -8,7 +8,7 @@ from datetime import timedelta
 import pytest
 
 # Helpers shared with the shopping list tests.
-from tests.plan_helpers import FETCH, TACOS, BURGERS, W, WEEK, add_recipe, plan, post, query, token
+from tests.plan_helpers import FETCH, TACOS, BURGERS, W, WEEK, add_recipe, plan, post, query
 
 
 def day_card(html: str, day: int) -> str:

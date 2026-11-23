@@ -34,12 +34,14 @@ NUGGETS_STEPS = [
 
 
 def save(settings, name, ingredients, steps, servings=4):
+    from tests.plan_helpers import table_id
+    tid = table_id(settings)
     conn = connect(settings.database_path)
     try:
         data = RecipeData(name=name, description="", category="kids-pick", cuisine="", prep_minutes=15,
                           cook_minutes=20, servings=servings, card_tag="", last_made=None,
                           ingredients=ingredients, steps=steps)
-        return save_recipe(conn, data, None)
+        return save_recipe(conn, data, None, table_id=tid)
     finally:
         conn.close()
 

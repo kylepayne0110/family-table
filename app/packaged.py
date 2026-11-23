@@ -264,7 +264,7 @@ def details_from_form(form) -> dict:
     return details
 
 
-def add_packaged_meal(conn: sqlite3.Connection, week: date, day: int, details: dict, label_photo: str | None,
+def add_packaged_meal(conn: sqlite3.Connection, table_id: int, week: date, day: int, details: dict, label_photo: str | None,
                       replace_meal_id: int | None, today: date | None) -> tuple[int, list[str]]:
     """Plan a packaged meal for a day. Returns (planned dinner id, label photos no longer used).
 
@@ -275,12 +275,12 @@ def add_packaged_meal(conn: sqlite3.Connection, week: date, day: int, details: d
     _check_day(day, week, today)
     w = week.isoformat()
     with write_transaction(conn):
-        ensure_week(conn, week)
+        ensure_week(conn, table_id, week)
         current = conn.execute(
             """SELECT p.id, COALESCE(r.name, pk.name) AS name FROM planned_meals p
                LEFT JOIN recipes r ON r.id = p.recipe_id LEFT JOIN packaged_meals pk ON pk.meal_id = p.id
-               WHERE p.week_start = ? AND p.day = ?""",
-            (w, day),
+               WHERE p.table_id = ? AND p.week_start = ? AND p.day = ?""",
+            (table_id, w, day),
         ).fetchone()
         unused: list[str] = []
         if current is not None:
@@ -290,8 +290,8 @@ def add_packaged_meal(conn: sqlite3.Connection, week: date, day: int, details: d
             unused = [r[0] for r in conn.execute(
                 "SELECT label_photo FROM packaged_meals WHERE meal_id = ? AND label_photo IS NOT NULL", (current["id"],))]
             conn.execute("DELETE FROM planned_meals WHERE id = ?", (current["id"],))
-        meal_id = conn.execute("INSERT INTO planned_meals (week_start, day, recipe_id) VALUES (?, ?, NULL)",
-                               (w, day)).lastrowid
+        meal_id = conn.execute("INSERT INTO planned_meals (table_id, week_start, day, recipe_id) VALUES (?, ?, ?, NULL)",
+                               (table_id, w, day)).lastrowid
         conn.execute(
             """INSERT INTO packaged_meals (meal_id, barcode, name, brand, package_size, product_source,
                    oven_directions, oven_source, microwave_directions, microwave_source,
@@ -301,7 +301,7 @@ def add_packaged_meal(conn: sqlite3.Connection, week: date, day: int, details: d
                    :label_photo)""",
             {**details, "meal_id": meal_id, "label_photo": label_photo},
         )
-        _bump_plan(conn, week)
+        _bump_plan(conn, table_id, week)
     return meal_id, unused
 
 
@@ -338,16 +338,16 @@ def update_directions(conn: sqlite3.Connection, meal_id: int, form, new_photo: s
                    label_photo = :photo, updated_at = datetime('now') WHERE meal_id = :meal_id""",
             {**values, "photo": photo, "meal_id": meal_id},
         )
-        row = conn.execute("SELECT week_start FROM planned_meals WHERE id = ?", (meal_id,)).fetchone()
-        _bump_plan(conn, date.fromisoformat(row["week_start"]))
+        row = conn.execute("SELECT table_id, week_start FROM planned_meals WHERE id = ?", (meal_id,)).fetchone()
+        _bump_plan(conn, row["table_id"], date.fromisoformat(row["week_start"]))
     return unused
 
 
-def photos_for_day(conn: sqlite3.Connection, week: date, day: int) -> list[str]:
+def photos_for_day(conn: sqlite3.Connection, table_id: int, week: date, day: int) -> list[str]:
     """Label photos of a packaged meal planned that day (to delete after it's removed or replaced)."""
     return [r[0] for r in conn.execute(
         """SELECT pk.label_photo FROM packaged_meals pk JOIN planned_meals p ON p.id = pk.meal_id
-           WHERE p.week_start = ? AND p.day = ? AND pk.label_photo IS NOT NULL""",
-        (week.isoformat(), day),
+           WHERE p.table_id = ? AND p.week_start = ? AND p.day = ? AND pk.label_photo IS NOT NULL""",
+        (table_id, week.isoformat(), day),
     )]
 

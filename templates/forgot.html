@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Forgot your password · Family Table{% endblock %}
+{% block main_class %}page page--narrow{% endblock %}
+
+{% block content %}
+<section class="index-card simple-card">
+    <div class="index-card__head">
+        <h1 class="simple-card__title">Forgot your password?</h1>
+        <span class="eyebrow">No problem</span>
+    </div>
+    <div class="index-card__lines simple-card__body">
+        <p>Family Table runs on a family computer and doesn't send email. Ask the person who looks after it for a
+           <strong>password reset link</strong>. It works once, for one hour, and lets you choose a new password.</p>
+        <p class="form-fineprint">For whoever runs Family Table: in the project folder, run
+           <code>python -m app.accounts reset-link USERNAME --base https://your-address</code> and send the link privately.</p>
+        <p><a class="btn btn-outline" href="/login">Back to sign in</a></p>
+    </div>
+</section>
+{% endblock %}

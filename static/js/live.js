@@ -49,10 +49,12 @@ class LiveRegion {
     if (!document.hidden && !this.busy) {
       try {
         const query = new URLSearchParams({ since: String(this.version), ...this.params() });
-        const res = await fetch(`${this.url}?${query}`, {
+        const joiner = this.url.includes("?") ? "&" : "?";
+        const res = await fetch(`${this.url}${joiner}${query}`, {
           headers: { "X-Requested-With": "fetch" }, cache: "no-store",
         });
         if (res.redirected) return this.signedOut();
+        if (res.status === 404 && (await LiveRegion.lostAccess(res))) return this.noAccess();
         if (res.status === 200) this.offer(await res.json());
       } catch {
         // Offline for a moment: just try again next time.
@@ -109,6 +111,7 @@ class LiveRegion {
     }
 
     if (res.redirected) return this.signedOut();
+    if (res.status === 404 && (await LiveRegion.lostAccess(res.clone()))) return this.noAccess();
     if (res.status === 403) {
       this.sending = false;
       return this.say("This page expired.", false, { label: "Reload", href: window.location.href });
@@ -146,6 +149,20 @@ class LiveRegion {
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(() => this.flush(), this.retryDelay);
     this.retryDelay = Math.min(this.retryDelay * 2, 15000);
+  }
+
+  // True when the server says this page's Table is no longer available to you.
+  static async lostAccess(res) {
+    try { return (await res.json()).access === "lost"; } catch { return false; }
+  }
+
+  // Removed from this Table (or it was switched away on purpose): stop and say so plainly.
+  noAccess() {
+    this.stopped = true;
+    this.sending = false;
+    this.queue = [];
+    this.el.innerHTML = "";
+    this.say("You no longer have access to this Table.", false, { label: "Go to your Tables", href: "/" });
   }
 
   signedOut() {
