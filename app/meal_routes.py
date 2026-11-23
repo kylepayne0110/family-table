@@ -365,9 +365,9 @@ async def cook_turn(request: Request, meal_id: int, session: auth.Session = Depe
     step = min(cook.get_step(conn, meal_id), len(steps))
     history = meal_chat.history(conn, meal_id)
     if not meal_chat.save_user_message(conn, meal_id, text, key):
-        # The same turn arrived twice (a retry or a repeated transcript): answer once, change nothing.
-        reply = cook.CookReply("", "", step, "duplicate")
-        return _cook_json(request, conn, session, meal, steps, reply)
+        # The same turn arrived twice (a retry after a lost connection, or a repeated transcript):
+        # nothing happens again; the answer already given is sent back.
+        return _cook_json(request, conn, session, meal, steps, _replay(conn, meal_id, key, step))
 
     def finish(reply: "cook.CookReply", kind: str = "text", servings_changed: bool = False):
         if reply.show:
@@ -442,6 +442,17 @@ async def cook_turn(request: Request, meal_id: int, session: auth.Session = Depe
                       servings_changed=bool(reply.servings or reply.reset_servings or reply.recipe_yield))
 
 
+def _replay(conn: sqlite3.Connection, meal_id: int, key: str | None, step: int) -> "cook.CookReply":
+    """The reply already given to this turn (by request key), so a retry repeats it instead of acting twice."""
+    asked = conn.execute("SELECT id FROM meal_messages WHERE meal_id = ? AND request_key = ?", (meal_id, key)).fetchone()
+    answer = asked and conn.execute(
+        "SELECT body FROM meal_messages WHERE meal_id = ? AND id > ? AND role = 'assistant' ORDER BY id LIMIT 1",
+        (meal_id, asked["id"])).fetchone()
+    if not answer:
+        return cook.CookReply("", "", step, "duplicate")     # still being answered: say nothing new
+    return cook.CookReply(cook.speakable(answer["body"]), answer["body"], step, "replay")
+
+
 def _packaged_turn(request, conn, session, meal, text: str, key: str | None):
     """Cook with me for a store-bought meal: only the directions the app has as text; never invented."""
     from app import packaged
@@ -450,7 +461,7 @@ def _packaged_turn(request, conn, session, meal, text: str, key: str | None):
     step = min(cook.get_step(conn, meal["id"]), len(steps))
     history = meal_chat.history(conn, meal["id"])
     if not meal_chat.save_user_message(conn, meal["id"], text, key):
-        return _cook_json(request, conn, session, meal, steps, cook.CookReply("", "", step, "duplicate"))
+        return _cook_json(request, conn, session, meal, steps, _replay(conn, meal["id"], key, step))
     reply = cook.guide(steps, text, step, history) if steps else None
     if reply is None and steps and cook._WHOLE.search(cook._plain(text)):
         joined = " ".join(f"{s['title']}: {s['body']}" for s in steps)

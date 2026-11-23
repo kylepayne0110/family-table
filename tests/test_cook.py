@@ -197,9 +197,20 @@ def test_repeated_transcript_is_processed_once(dinner, settings):
     client, mid, _ = dinner
     key = uuid.uuid4().hex
     say(client, mid, "start", key=key)
-    assert say(client, mid, "next", key=key)["kind"] == "duplicate"   # same turn arriving again
+    assert say(client, mid, "next", key=key)["kind"] == "replay"      # same turn arriving again: answer repeated
     assert client.get(f"/plan/meals/{mid}/cook", headers=FETCH).json()["step"] == 1
     assert query(settings, "SELECT COUNT(*) FROM meal_messages WHERE role = 'user'") == [(1,)]
+
+
+def test_retry_after_a_lost_answer_repeats_it_without_acting_twice(dinner, settings):
+    client, mid, _ = dinner
+    say(client, mid, "start")
+    key = uuid.uuid4().hex
+    first = say(client, mid, "next", key=key)          # the answer was lost on the way back to the phone
+    retry = say(client, mid, "next", key=key)          # Retry sends the same turn again
+    assert first["step"] == 2 and retry["step"] == 2
+    assert retry["kind"] == "replay" and retry["show"] == first["show"]
+    assert client.get(f"/plan/meals/{mid}/cook", headers=FETCH).json()["step"] == 2
 
 
 def test_each_planned_dinner_has_its_own_session_and_it_survives_reopening(dinner, settings):

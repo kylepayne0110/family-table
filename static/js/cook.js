@@ -93,7 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---- Talking to the server ----
   const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `k${Date.now()}${Math.random().toString(36).slice(2)}`);
 
-  async function send(text, { typed = false } = {}) {
+  async function send(text, { typed = false, key = null } = {}) {
     const mine = ++turn;
     if (inflight) inflight.abort();          // a newer turn replaces an unanswered one
     const controller = new AbortController();
@@ -102,7 +102,8 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.retry.hidden = true;
     io.setThinking(true);
     const slow = setTimeout(() => { if (mine === turn) ui.hint.textContent = "Still thinking… the assistant can be slow on a busy computer."; }, 6000);
-    const body = new URLSearchParams({ csrf_token: csrf, table_id: tableId, text, request_key: newKey() });
+    const requestKey = key || newKey();     // a retry keeps its key, so the server never acts on it twice
+    const body = new URLSearchParams({ csrf_token: csrf, table_id: tableId, text, request_key: requestKey });
     if (heardProposal) body.set("proposal_id", String(heardProposal));
     heardProposal = null;                    // a yes only counts right after hearing the change
     let data = null;
@@ -119,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (controller.signal.aborted) return;   // replaced by a newer turn: say nothing
       clearTimeout(slow);
       io.setThinking(false);
-      lastFailed = text;
+      lastFailed = { text, key: requestKey };
       ui.retry.hidden = false;
       const msg = error.message && error.message !== "failed" && error.message !== "Failed to fetch"
         ? error.message : "I lost the connection. Your place is saved; say that again when you're back online.";
@@ -202,7 +203,7 @@ document.addEventListener("DOMContentLoaded", () => {
     io.mute(on);
   }
   ui.mute.addEventListener("click", toggleMute);
-  ui.retry.addEventListener("click", () => { if (lastFailed) send(lastFailed); });
+  ui.retry.addEventListener("click", () => { if (lastFailed) send(lastFailed.text, { key: lastFailed.key }); });
   panel.querySelectorAll("[data-cook-cue]").forEach((b) => b.addEventListener("click", () => {
     io.stopSpeaking();
     send(b.dataset.cookCue, { typed: true });
