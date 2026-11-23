@@ -1,12 +1,18 @@
 # Family Table
 
-A self-hosted recipe box, weekly meal planner, and shared grocery list for families. It runs on a home computer, installs on iPhones as an app, and keeps every recipe, plan, and photo in one SQLite file the family owns. Everyone has their own sign-in; a family shares a **Table** (its recipe book, meal plan, and grocery list), and can talk to a local cooking assistant hands-free.
+A self-hosted recipe box, weekly meal planner, and shared grocery list for families. It runs on a home computer, installs on iPhones as an app, and stores recipes and plans in SQLite and photos in the uploads folder. Everyone has their own sign-in; a family shares a **Table** (its recipe book, meal plan, and grocery list), and can talk to a local cooking assistant hands-free.
 
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-677%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-678%20passing-2ea44f)
+
+## Start here for a project handoff
+
+For the household setup, run `bash scripts/serve.sh` in WSL and `tailscale funnel 8000` in Windows PowerShell. Family Table uses Windows Ollama through mirrored WSL networking. The Docker setup below is an alternative. On an existing installation, read [the upgrade and restore guide](docs/upgrading.md) before the first startup, which migrates the database.
+
+The accounts and voice release was tested with 661 unit/integration tests, 17 Chromium browser tests, and live local Qwen requests. Browser speech was simulated. Physical iPhone interruption, microphone behavior, and resuming after a screen lock still need [device verification](docs/iphone-testing.md). A GitHub update alone does not deploy the app on the home computer.
 
 ## The problem
 
@@ -234,7 +240,7 @@ The Cooking Assistant needs [Ollama](https://ollama.com) running with the model 
 
 ```bash
 source .venv/bin/activate
-python -m pytest --ignore=tests/browser    # 660 unit and integration tests
+python -m pytest --ignore=tests/browser    # 661 unit and integration tests
 python -m pytest tests/browser             # 17 real-browser tests (Chromium via Playwright)
 ruff check app tests && pip-audit -r requirements.txt
 ```
