@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, photo_placeholder %}
+
+{% block title %}Community · Family Table{% endblock %}
+{% block header %}{% include "_app_header.html" %}{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/community.js') }}" defer></script>{% endblock %}
+
+{% block content %}
+<section class="pick-head">
+    <p class="eyebrow">Shared by families on Family Table</p>
+    <h1 class="display display--sm">Community <em>recipes</em></h1>
+    <p class="staples-intro">Recipes other families chose to share. Saving one puts your own copy in
+        <strong>{{ active_table.name if active_table else "your Table" }}</strong>'s recipe book, to cook, plan, and change however you like.</p>
+</section>
+
+<form class="pick-search header-search" role="search" method="get" action="/community">
+    <label class="visually-hidden" for="community-q">Search by dish or ingredient</label>
+    {{ icon("search", 18) }}
+    <input id="community-q" type="search" name="q" value="{{ q }}" placeholder="Search a dish or ingredient, e.g. chicken" maxlength="100" autocomplete="off">
+</form>
+
+{% if q %}<p class="search-summary">Recipes matching &ldquo;{{ q }}&rdquo; &middot; <a href="/community">Clear search</a></p>{% endif %}
+
+<ul class="community-list">
+    {% for r in results["items"] %}
+    <li class="community-card">
+        <a class="community-card__photo" href="/community/{{ r.id }}" tabindex="-1" aria-hidden="true">
+            {% if r.photo_filename %}<img src="/photos/{{ r.photo_filename }}" alt="" loading="lazy" decoding="async">{% else %}{{ photo_placeholder("") }}{% endif %}
+        </a>
+        <div class="community-card__body">
+            <h2 class="community-card__title"><a href="/community/{{ r.id }}">{{ r.name }}</a></h2>
+            <p class="community-card__credit">
+                {%- if r.creator_credit %}By {{ r.creator_credit }} &middot; {% endif %}shared by {{ r.publisher_name }}
+            </p>
+            <p class="community-card__meta">
+                {% if r | total_time %}<span>{{ icon("clock", 14) }}{{ r | total_time }}</span>{% endif %}
+                {% if r.servings %}<span>Serves {{ r.servings }}</span>{% endif %}
+                <span>{{ r.ingredient_count }} ingredients</span>
+            </p>
+            {% if r.saved_recipe %}
+            <a class="btn btn-outline btn-sm" href="/recipes/{{ r.saved_recipe }}">{{ icon("check", 16) }}In your recipes</a>
+            {% elif not active_table %}
+            <a class="btn btn-outline btn-sm" href="/welcome">Start a Table to save recipes</a>
+            {% else %}
+            <form method="post" action="/community/{{ r.id }}/save" data-save-form>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="table_id" value="{{ table_id }}">
+                <input type="hidden" name="version" value="{{ r.version }}">
+                <button type="submit" class="btn btn-primary btn-sm">Save to {{ active_table.name if active_table else "my Table" }}</button>
+            </form>
+            {% endif %}
+        </div>
+    </li>
+    {% else %}
+    <li class="grid-empty">
+        {% if q %}<p class="grid-empty__title">No community recipes match that yet.</p>
+        <p>Try another dish or ingredient.</p>
+        {% else %}<p class="grid-empty__title">No community recipes yet.</p>
+        <p>Share one of yours from its recipe page: it's always your choice, and you can take it back.</p>{% endif %}
+    </li>
+    {% endfor %}
+</ul>
+
+<nav class="pager" aria-label="More recipes">
+    {% if results.page > 1 %}<a class="btn btn-outline btn-sm" href="/community?q={{ q | urlencode }}&amp;page={{ results.page - 1 }}">{{ icon("arrow-left", 16) }}Previous</a>{% endif %}
+    {% if results.has_more %}<a class="btn btn-outline btn-sm" href="/community?q={{ q | urlencode }}&amp;page={{ results.page + 1 }}">More recipes{{ icon("arrow-right", 16) }}</a>{% endif %}
+</nav>
+{% endblock %}

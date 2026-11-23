@@ -23,6 +23,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # Project modules.
 from app import ollama, tables
 from app.account_routes import router as account_router
+from app.community_routes import router as community_router
+from app.model_gate import ModelGate
 from app.auth import LoginRequired, default_limiters
 from app.clock import HouseholdClock
 from app.config import BASE_DIR, Settings, load_settings
@@ -104,12 +106,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.clock = HouseholdClock(settings.zone)
     # The Cooking Assistant's model: the local Ollama server (tests swap in a stand-in).
     app.state.ask_model = lambda messages, response_format=None: ollama.chat(settings, messages, response_format)
+    # Model calls run on their own small pool, one per person, so they never hold up pages.
+    app.state.model_gate = ModelGate(settings.model_concurrency)
 
     # Make our static files accessible to the browser.
     # For example, /static/css/styles.css loads our stylesheet.
     app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
     app.include_router(router)
     app.include_router(account_router)  # Welcome, Tables, invites, Account
+    app.include_router(community_router)  # Community, sharing a recipe, ideas from what's on hand
     app.include_router(plan_router)  # Meal Planner, Shopping List, Kitchen Staples
     app.include_router(meal_router)  # one planned dinner: servings, Add ingredients, Cooking Assistant
     app.include_router(packaged_router)  # scan a packaged meal for one dinner

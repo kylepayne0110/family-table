@@ -82,6 +82,19 @@
 {% endif %}
 {% endif %}
 
+{% if ai_generated %}
+<div class="import-notice ai-notice" role="status">
+    <p class="import-notice__title">AI-generated idea: this isn't a tested recipe.</p>
+    <p>{% if ai_offline %}The local assistant isn't answering, so only the name and your ingredients are filled in.{% else %}Check the amounts, times, and steps, and change anything you like.{% endif %} Nothing is added to your recipes until you press Save.</p>
+</div>
+{% endif %}
+{% if recoverable %}
+<div class="import-notice draft-notice" role="status" data-draft-recover>
+    <p class="import-notice__title">You have an unsaved recipe{% if recoverable.fields.name %}: &ldquo;{{ recoverable.fields.name }}&rdquo;{% endif %}.</p>
+    <p><a class="btn btn-outline btn-sm" href="/recipes/new?draft={{ recoverable.id }}">Pick up where you left off</a></p>
+</div>
+{% endif %}
+
 {% if errors %}
 <div class="form-errors" role="alert" tabindex="-1" data-focus-on-load>
     <p class="form-errors__title">A few things need a look before we can save:</p>

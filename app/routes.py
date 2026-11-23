@@ -553,11 +553,29 @@ async def _save_from_form(request: Request, session: auth.Session, conn: sqlite3
     return redirect(f"/recipes/{recipe_id}?msg=saved")
 
 
+def draft_values(draft: dict) -> dict:
+    """A saved draft's fields as form values (missing keys get their empty defaults)."""
+    fields = {**EMPTY_VALUES, **{k: v for k, v in draft["fields"].items() if k in EMPTY_VALUES}}
+    fields["version"] = ""
+    return fields
+
+
 @router.get("/recipes/new")
-def new_recipe_form(request: Request, session: auth.Session = Depends(auth.require_session),
+def new_recipe_form(request: Request, draft: int | None = None,
+                    session: auth.Session = Depends(auth.require_session),
                     conn: sqlite3.Connection = Depends(get_db)):
-    scope(request, conn, session)
-    return _form_page(request, session, dict(EMPTY_VALUES))
+    """A blank form, or a draft (from an AI idea, or recovered after a reload or lost connection)."""
+    from app import drafts
+    current = scope(request, conn, session)
+    if draft is not None:
+        found = drafts.get(conn, draft, session.user_id, current.table_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="That draft isn't available. It may have been saved already.")
+        return _form_page(request, session, draft_values(found), draft_id=found["id"], draft_rev=found["rev"],
+                          ai_generated=found["fields"].get("ai_generated", False),
+                          ai_offline=found["fields"].get("offline", False))
+    waiting = drafts.latest(conn, session.user_id, current.table_id)
+    return _form_page(request, session, dict(EMPTY_VALUES), recoverable=waiting)
 
 
 @router.post("/recipes/new")
@@ -610,8 +628,13 @@ def _recipe_extras(conn: sqlite3.Connection, recipe: dict) -> dict:
     from app import community
     added = conn.execute("SELECT display_name FROM users WHERE id = ?", (recipe["added_by"],)).fetchone() \
         if recipe.get("added_by") else None
+    source = None
+    if recipe.get("community_listing_id"):
+        row = conn.execute("SELECT id, status, version FROM community_listings WHERE id = ?",
+                           (recipe["community_listing_id"],)).fetchone()
+        source = dict(row) if row else None
     return {"added_by_name": added["display_name"] if added else "",
-            "listing": community.listing_for_recipe(conn, recipe["id"])}
+            "listing": community.listing_for_recipe(conn, recipe["id"]), "community_source": source}
 
 
 @router.get("/recipes/{recipe_id}/edit")

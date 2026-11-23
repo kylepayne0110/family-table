@@ -2,6 +2,12 @@
 {% from "_macros.html" import icon %}
 <section class="share-status" aria-labelledby="share-title">
     <h2 class="share-status__title" id="share-title">{{ icon("people", 18) }}Community</h2>
+    {% if recipe.community_listing_id or recipe.community_credit %}
+    <p class="share-status__note">Your own copy of a community recipe (version {{ recipe.community_version }}). Changes you make stay in your Table.
+        {%- if community_source and community_source.status == "published" and community_source.version != recipe.community_version %}
+        The original has been updated since: <a class="text-link-inline" href="/community/{{ community_source.id }}">see the latest version</a>.
+        {%- elif not community_source or community_source.status != "published" %} The original is no longer shared, but your copy keeps working.{% endif %}</p>
+    {% endif %}
     {% if listing and listing.status == "published" %}
         <p>Shared with the community as version {{ listing.version }}{% if listing.publisher_name %}, shared by {{ listing.publisher_name }}{% endif %}.
            <a class="text-link-inline" href="/community/{{ listing.id }}">See the community page</a>.</p>

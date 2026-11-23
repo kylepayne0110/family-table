@@ -12,6 +12,7 @@
     <p class="eyebrow">{{ day_date.strftime("%A, %B %-d") }}</p>
     <h1 class="display display--sm">What's for <em>{{ day_name }}?</em></h1>
     <a class="text-link pick-head__scan" href="/plan/{{ week_iso }}/day/{{ day }}/packaged">{{ icon("camera", 18) }}Scan a packaged meal instead</a>
+    <a class="text-link pick-head__scan" href="/ideas?week={{ week_iso }}&amp;day={{ day }}">{{ icon("sparkle", 18) }}Get ideas from what you have</a>
 </section>
 
 <form class="pick-search header-search" role="search" method="get" action="/plan/{{ week_iso }}/day/{{ day }}/choose">
